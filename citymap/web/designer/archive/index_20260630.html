@@ -29,9 +29,6 @@
     border:1px solid transparent}
   .opt:hover{background:rgba(60,72,66,.4)}
   .opt.sel{border-color:var(--amber);background:rgba(120,86,30,.18);color:var(--ink)}
-  .opt.locked{opacity:.42;cursor:not-allowed}
-  .opt.locked:hover{background:transparent}
-  .opt.locked .nm{color:var(--dim)} .opt.locked .sub{color:var(--orange)}
   .opt .nm{color:var(--ink)} .opt .sub{color:var(--dim);font-size:10px}
   .row{display:flex;justify-content:space-between;padding:2px 0;font-size:11px}
   .row .k{color:var(--dim)} .row .v{color:var(--ink)}
@@ -47,26 +44,8 @@
   .sval{width:54px;text-align:right;color:var(--ink)}
   select,input[type=text]{background:#10130f;color:var(--ink);border:1px solid var(--hair);
     font-family:inherit;font-size:11px;padding:5px;width:100%}
-  .mount{display:flex;align-items:flex-start;gap:6px;padding:4px 6px;border:1px solid var(--hair);margin:3px 0}
-  .mount select{flex:1;width:100%}
-  .postag{flex:0 0 24px;height:24px;line-height:24px;text-align:center;font-weight:bold;font-size:11px;
-    color:#0b0d0c;background:var(--teal);border:1px solid rgba(20,24,20,.7);letter-spacing:.04em}
-  .postag.wing{background:var(--amber)} .postag.mod{background:var(--neutral,#5a6258);color:#d8d2c0}
-  .poslabel{display:block;color:var(--dim);font-size:9.5px;letter-spacing:.06em;margin-bottom:2px}
-  .modslot{margin:4px 0}
-  /* derived RtW class banner */
-  .classbox{border:1px solid var(--amber);background:rgba(120,86,30,.12);padding:6px 8px;margin:0 0 8px;text-align:center}
-  .classcode{color:var(--orange);font-weight:bold;letter-spacing:.18em;font-size:14px}
-  .classname{color:var(--ink);font-size:11px;letter-spacing:.06em;margin-top:1px}
-  .classnote{color:var(--dim);font-size:9.5px;line-height:1.4;margin-top:3px}
-  /* immunity zone */
-  .izbox{border-top:1px solid var(--hair);margin-top:8px;padding-top:6px}
-  .izhead{color:var(--amber);font-size:10px;letter-spacing:.12em;margin-bottom:4px}
-  .izhead select{display:inline-block;width:auto;padding:1px 3px;font-size:10px;margin:0 2px}
-  .izband{position:relative;height:12px;background:rgba(154,58,51,.22);border:1px solid var(--hair);margin:2px 0 4px}
-  .izseg{position:absolute;top:0;bottom:0;background:rgba(111,158,106,.6);border-left:1px solid var(--good);border-right:1px solid var(--good)}
-  .iztxt{font-size:10px;line-height:1.4} .iztxt.good{color:var(--good)} .iztxt.bad{color:var(--red)}
-  .iztxt .izsub{color:var(--dim);font-size:9px}
+  .mount{display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid var(--hair);margin:3px 0}
+  .mount select{flex:1}
   .banner{padding:6px 12px;font-weight:bold;letter-spacing:.1em;font-size:11px;text-align:center}
   .ok{background:rgba(60,110,60,.25);color:var(--good)}
   .bad{background:rgba(120,40,36,.3);color:var(--red)}
@@ -107,9 +86,9 @@
 </div>
 
 <div class="panel" id="right">
-  <div class="hdr">Gun Stations &mdash; A/B/X/Y &middot; P/S wings</div>
+  <div class="hdr">Weapon Mounts</div>
   <div class="grp" id="mountList"></div>
-  <div class="hdr">Utility Module Slots</div>
+  <div class="hdr">Utility Modules</div>
   <div class="grp" id="moduleList"></div>
   <div class="hdr">Analysis</div>
   <div id="validBanner" class="banner ok">VALID DESIGN</div>
@@ -118,22 +97,21 @@
   <div class="grp">
     <div class="lbl">Design Name</div>
     <input type="text" id="designName" value="PATTERN-I HOPLITE">
-    <div class="row" style="margin-top:6px"><span class="k">TECH YEAR</span><span class="v" id="yearVal">2035</span></div>
-    <div class="stepper"><span class="nm">tech progress</span>
+    <div class="row" style="margin-top:6px"><span class="k">YEAR</span><span class="v" id="yearVal">2035</span></div>
+    <div class="stepper"><span class="nm">research year</span>
       <button class="sbtn" id="yrDown">&minus;</button><span class="sval" id="yrShow">2035</span><button class="sbtn" id="yrUp">+</button></div>
-    <div class="warnmsg" style="margin-top:4px;line-height:1.5">Components unlock by <b>research</b>. Locked items show &#128274;&lt;year&gt;. Availability varies per playthrough (stochastic research).</div>
   </div>
 </div>
 
 <div class="panel" id="loadout">
-  <div class="hdr">Loadout &amp; Cones of Fire &mdash; top-down (bow &uarr;)</div>
+  <div class="hdr">Loadout Schematic &mdash; top-down (bow &uarr;)</div>
   <div class="body"><canvas id="schematic" width="430" height="188"></canvas></div>
   <div id="loadLegend">
-    <span><i style="background:#3e7a74"></i>CENTRELINE turret (A/B/X/Y)</span>
-    <span><i style="background:#7d5a2a"></i>WING turret (P/S)</span>
-    <span><i style="background:rgba(110,176,160,.18)"></i>cone of fire</span>
-    <span><i style="background:#5a6258"></i>module</span>
-    <span><i style="background:#2c3a34"></i>leg cluster</span>
+    <span><i style="background:#3e7a74"></i>MAIN turret</span>
+    <span><i style="background:#7d5a2a"></i>SECONDARY</span>
+    <span><i style="background:#5a6258"></i>MODULE pod</span>
+    <span><i style="background:#2c3a34"></i>LEG cluster</span>
+    <span><i style="background:rgba(110,176,160,.25)"></i>armour zone</span>
   </div>
 </div>
 

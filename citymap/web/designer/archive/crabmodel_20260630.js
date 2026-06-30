@@ -247,59 +247,49 @@
     var mounts = spec.mounts && spec.mounts.length ? spec.mounts : defaultMounts(cls, P.turrets);
     var deckY = standY + ht * 1.02;
 
-    if (spec.positioned) {
-      // ---- POSITIONED layout: designer drives exact A/B/X/Y/P/S placement -----
-      // Each mount carries: { caliberMm, pos, grp, zf, xf, tier, wing }.
-      // zf/xf are hull fractions (z fore-aft, x port..stbd); tier raises a turret
-      // to superfire over the one in front of it. wing turrets sit on the flank
-      // and face outboard (yaw +/- 90); centreline mains face fore (0) / aft (PI).
-      mounts.forEach(function (m) {
-        var x = (m.xf || 0) * beam;
-        var z = (m.zf || 0) * L;
-        var riser = (m.tier || 0) * ht * 0.5;
-        var y, yaw;
-        if (m.wing) {
-          y = deckY - ht * 0.16;
-          yaw = (m.xf >= 0) ? Math.PI / 2 : -Math.PI / 2;   // starboard / port outboard
-        } else {
-          y = deckY + riser;
-          yaw = (m.grp === "aft") ? Math.PI : 0;            // aft mains face astern
-        }
-        buildTurret(m.caliberMm, x, y, z, yaw, m.wing);
-      });
-    } else {
-      // ---- legacy auto layout (gallery / fallback) ---------------------------
-      // Sort fitted guns heaviest-first so the big guns claim the main centreline mounts.
-      var ordered = mounts.map(function (m, i) { return { m: m, i: i }; })
-        .sort(function (a, b) { return (b.m.caliberMm || 0) - (a.m.caliberMm || 0); });
-      var maxMain = Math.min(P.turrets, ordered.length);
-      var foreN = Math.ceil(maxMain / 2);
-      var aftN = maxMain - foreN;
-      function foreSlot(k, n) {
-        if (n === 1) return { z: 0.30 * L, riser: 0 };
-        return { z: (0.34 - k * 0.16) * L, riser: (n - 1 - k) * ht * 0.5 };
-      }
-      function aftSlot(k, n) {
-        if (n === 1) return { z: -0.32 * L, riser: 0 };
-        return { z: (-0.30 - k * 0.16) * L, riser: (n - 1 - k) * ht * 0.5 };
-      }
-      var oi = 0;
-      for (var fk = 0; fk < foreN; fk++) {
-        var sF = foreSlot(fk, foreN);
-        buildTurret(ordered[oi++].m.caliberMm, 0, deckY + sF.riser, sF.z, 0);
-      }
-      for (var ak = 0; ak < aftN; ak++) {
-        var sA = aftSlot(ak, aftN);
-        buildTurret(ordered[oi++].m.caliberMm, 0, deckY + sA.riser, sA.z, Math.PI);
-      }
-      var secSide = 1, secRow = 0;
-      while (oi < ordered.length) {
-        var sx = secSide * beam * 0.46;
-        var sz = (-0.04 - secRow * 0.14) * L;
-        buildTurret(ordered[oi++].m.caliberMm, sx, deckY - ht * 0.18, sz,
-                    secSide > 0 ? Math.PI / 2 : -Math.PI / 2, true);
-        if (secSide > 0) { secSide = -1; } else { secSide = 1; secRow++; }
-      }
+    // Sort fitted guns heaviest-first so the big guns claim the main centreline mounts.
+    var ordered = mounts.map(function (m, i) { return { m: m, i: i }; })
+      .sort(function (a, b) { return (b.m.caliberMm || 0) - (a.m.caliberMm || 0); });
+
+    // How many MAIN centreline turrets this chassis carries (rest -> secondaries).
+    var maxMain = Math.min(P.turrets, ordered.length);
+    // Centreline placement plan: fore positions first (superfiring), then aft.
+    // foreN forward, aftN aft. Bias toward forward guns like most RtW designs.
+    var foreN = Math.ceil(maxMain / 2);
+    var aftN = maxMain - foreN;
+
+    // Forward centreline slots (superfiring A over B, stepped up toward the bow):
+    // closest to bow is highest. Z fractions of L.
+    function foreSlot(k, n) {
+      if (n === 1) return { z: 0.30 * L, riser: 0 };
+      // k=0 is the foremost/highest; subsequent step down & aft
+      return { z: (0.34 - k * 0.16) * L, riser: (n - 1 - k) * ht * 0.5 };
+    }
+    function aftSlot(k, n) {
+      if (n === 1) return { z: -0.32 * L, riser: 0 };
+      // k=0 nearest stern/highest (X over Y superfiring toward the transom)
+      return { z: (-0.30 - k * 0.16) * L, riser: (n - 1 - k) * ht * 0.5 };
+    }
+
+    var oi = 0;  // index into the heaviest-first ordered list
+    // place forward mains
+    for (var fk = 0; fk < foreN; fk++) {
+      var sF = foreSlot(fk, foreN);
+      buildTurret(ordered[oi++].m.caliberMm, 0, deckY + sF.riser, sF.z, 0);
+    }
+    // place aft mains
+    for (var ak = 0; ak < aftN; ak++) {
+      var sA = aftSlot(ak, aftN);
+      buildTurret(ordered[oi++].m.caliberMm, 0, deckY + sA.riser, sA.z, Math.PI);
+    }
+    // remaining guns -> midships secondaries on alternating port/starboard flanks
+    var secSide = 1, secRow = 0;
+    while (oi < ordered.length) {
+      var sx = secSide * beam * 0.46;                    // on the flank
+      var sz = (-0.04 - secRow * 0.14) * L;              // staggered amidships, slightly aft
+      buildTurret(ordered[oi++].m.caliberMm, sx, deckY - ht * 0.18, sz,
+                  secSide > 0 ? Math.PI / 2 : -Math.PI / 2, true);
+      if (secSide > 0) { secSide = -1; } else { secSide = 1; secRow++; }
     }
 
     // Build one turret (barbette + faceted box + scaled barrels) at (x,y,z),
