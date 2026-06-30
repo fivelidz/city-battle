@@ -38,6 +38,9 @@ namespace CityBattle.Combat
         /// <summary>Player command: flags, flagship, formations.</summary>
         public readonly CommandSystem Command = new();
 
+        /// <summary>Scenario objective tracking + win/lose outcome.</summary>
+        public readonly ObjectiveSystem Objectives = new();
+
         /// <summary>Weather precipitation 0..1 (0 dry, 1 heavy rain). Slows movement & cuts accuracy.</summary>
         public float Precipitation = 0f;
         float PrecipMoveFactor => 1f - Precipitation * 0.4f;   // up to 40% slower in heavy rain
@@ -121,7 +124,8 @@ namespace CityBattle.Combat
                         e.type == Data.EwType.DroneDetector) { u.Emitting = true; break; }
             }
 
-            // 8. Win/loss bookkeeping handled by caller (BattleController).
+            // 8. Objective / win-loss tracking (hold timers, escort arrival, kill counts).
+            Objectives.Tick(dt);
         }
 
         public int LivingCount(int team)

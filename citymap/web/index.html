@@ -89,6 +89,19 @@
   #uArm .gunrow .cal{color:var(--amber)}
   #uArm .gunrow .rng{color:var(--teal)}
   #uArm .none{color:var(--dim);font-size:11px}
+  /* TARGETING COMPUTER: per-enemy firing-solution rows */
+  #tgtBody .trow{display:flex;align-items:baseline;gap:6px;font-size:10.5px;line-height:1.55;
+    border-left:2px solid var(--dim);padding-left:7px;margin:3px 0;cursor:pointer}
+  #tgtBody .trow:hover{background:rgba(120,140,130,0.08)}
+  #tgtBody .trow.firing{border-left-color:var(--red)}
+  #tgtBody .trow.masked{border-left-color:var(--amber)}
+  #tgtBody .trow.oor{border-left-color:#445;opacity:.6}
+  #tgtBody .tn{color:var(--ink);font-weight:bold;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tgtBody .trng{color:var(--teal)}
+  #tgtBody .tsol{font-size:9.5px;letter-spacing:.04em}
+  #tgtBody .tsol.fire{color:var(--red)} #tgtBody .tsol.mask{color:var(--amber)} #tgtBody .tsol.oor{color:var(--dim)}
+  #tgtBody .tbrg{color:var(--dim);font-size:9px}
+  #tgtBody .none{color:var(--dim);font-size:10.5px}
   /* COMBAT LOG panel — bottom-left, just right of the unit inspect panel (no overlap) */
   #clog{position:fixed;left:290px;bottom:10px;width:282px;max-height:180px;z-index:5;display:none;
     overflow:hidden}
@@ -305,6 +318,12 @@
   <div id="uDeadRow" style="display:none;margin-top:5px">
     <div class="row"><span class="dim">DEAD ZONE</span> <span id="uDeadPct" class="warn">--</span> <span class="dim">of range masked</span></div>
     <div class="bar"><i id="uDeadBar" style="background:var(--red)"></i></div>
+  </div>
+  <!-- TARGETING COMPUTER: enemy crabs in fire-control, with the firing solution this gun has on each -->
+  <div id="uTgtComp" style="display:none">
+    <div class="hdr" style="margin-top:8px;font-size:10px">Targeting Computer
+      <span id="tgtMode" class="dim" style="font-weight:normal;letter-spacing:.06em"></span></div>
+    <div id="tgtBody"></div>
   </div>
   <div class="row dim" id="uNote" style="margin-top:5px"></div>
 </div>

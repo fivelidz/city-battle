@@ -2343,6 +2343,91 @@
     });
   }
 
+  // ---------- TARGETING COMPUTER ----------
+  // For the selected FRIENDLY gun, work out the firing solution it has on every HOSTILE crab:
+  //   range vs the gun's max range, and which trajectory (DIRECT / OBLIQUE / MORTAR) can actually
+  //   reach it through terrain (reusing canHit). Reports bearing + the best solution per target.
+  // This is the tactical read of "who can I shoot right now, and how" the player asked for.
+  // Returns a sorted list (firing solutions first, then masked, then out-of-range), best at top.
+  function computeFiringSolutions(g) {
+    var d = g.userData;
+    if (!(d.rangeM > 0)) return [];
+    var t = map.terrain, res = t.res, H = t.heights, cell = t.cell_m;
+    var rz = (map.size_m[1] / (res - 1));
+    var ex = d.x, ez = d.z, ey = d.eye + 8;
+    var maxRangeM = d.rangeM;                       // hard cap — oblique/mortar never exceed it
+    // Trajectories tried in order of preference: a flat DIRECT shot is best (fast, accurate),
+    // then OBLIQUE to clear a crest, then MORTAR to plunge into deep defilade.
+    var modes = ["direct", "oblique", "mortar"];
+    var out = [];
+    for (var i = 0; i < units.length; i++) {
+      var e = units[i]; if (e === g) continue;
+      var ed = e.userData;
+      if (ed.side !== "hostile") continue;
+      if (ed.cmd && ed.cmd.struct <= 0) continue;   // already knocked out
+      var dx = ed.x - ex, dz = ed.z - ez;
+      var rng = Math.hypot(dx, dz);
+      var ty = ed.eye ? heightAt(ed.x, ed.z) + ed.eye * 0.5 : heightAt(ed.x, ed.z) + 2;
+      var sol = null;                                // {mode,label} of the first trajectory that reaches
+      if (rng <= maxRangeM) {
+        for (var m = 0; m < modes.length; m++) {
+          var p = trajParams(modes[m]);
+          var v = muzzleSpeed(d.rangeM);
+          if (canHit(ex, ez, ey, ed.x, ed.z, ty, res, H, cell, rz, v, p, maxRangeM)) {
+            sol = { mode: modes[m], label: p.label.split(" / ")[0] };  // "DIRECT" / "OBLIQUE" / "MORTAR"
+            break;
+          }
+        }
+      }
+      var state = rng > maxRangeM ? "oor" : (sol ? "fire" : "masked");
+      out.push({ unit: e, name: ed.name, rng: rng, brg: bearingFromVec(dx, dz),
+                 inRange: rng <= maxRangeM, sol: sol, state: state });
+    }
+    // sort: firing first, then masked, then OOR; within a group, nearest first.
+    var order = { fire: 0, masked: 1, oor: 2 };
+    out.sort(function (a, b) {
+      if (order[a.state] !== order[b.state]) return order[a.state] - order[b.state];
+      return a.rng - b.rng;
+    });
+    return out;
+  }
+
+  function renderTargetingComputer(g) {
+    var box = document.getElementById("uTgtComp");
+    var body = document.getElementById("tgtBody");
+    var modeEl = document.getElementById("tgtMode");
+    if (!box || !body) return;
+    var d = g.userData;
+    // Only show for armed FRIENDLY crabs (you target with your own guns).
+    if (d.side !== "friend" || !(d.rangeM > 0)) { box.style.display = "none"; return; }
+    var sols = computeFiringSolutions(g);
+    box.style.display = "block";
+    if (modeEl) modeEl.textContent = "// LOS fire-control";
+    body.innerHTML = "";
+    if (!sols.length) {
+      body.innerHTML = '<div class="none">no hostiles in theatre</div>';
+      return;
+    }
+    sols.forEach(function (s) {
+      var row = document.createElement("div");
+      row.className = "trow " + (s.state === "fire" ? "firing" : s.state === "masked" ? "masked" : "oor");
+      var km = (s.rng / 1000).toFixed(s.rng >= 10000 ? 0 : 1);
+      var solTxt, solCls;
+      if (s.state === "oor")        { solTxt = "OUT OF RANGE"; solCls = "oor"; }
+      else if (s.state === "masked"){ solTxt = "NO SOLUTION (masked)"; solCls = "mask"; }
+      else                          { solTxt = s.sol.label + " \u2014 FIRING SOLUTION"; solCls = "fire"; }
+      row.innerHTML =
+        '<span class="tn">' + escapeHtml(s.name) + '</span>' +
+        '<span class="trng">' + km + ' km</span>' +
+        '<br><span class="tbrg">BRG ' + bearingTxt(s.brg) + '</span> ' +
+        '<span class="tsol ' + solCls + '">' + solTxt + '</span>';
+      // make the row a real flex-wrap so the second line sits under the name
+      row.style.flexWrap = "wrap";
+      row.onclick = function () { selectUnit(s.unit); focusUnit(s.unit); };
+      body.appendChild(row);
+    });
+  }
+
   function selectUnit(g) {
     selected = g; var d = g.userData;
     var p = document.getElementById("unit"); p.style.display = "block";
@@ -2356,6 +2441,7 @@
     document.getElementById("uRange").textContent = d.rangeM ? (d.rangeM / 1000).toFixed(1) + " km" : "n/a";
     document.getElementById("uNote").textContent = d.note;
     updateUnitFacing(g);
+    renderTargetingComputer(g);
     rebuildOverlays();
     refreshCommsLine(g);
     if (typeof syncCommandPanel === "function") syncCommandPanel();
@@ -3018,7 +3104,10 @@
     if (moved) { drawOrderLines(); }
     // keep the selected unit's overlays roughly current without thrashing every frame
     cmd._ovTimer = (cmd._ovTimer || 0) + dt;
-    if (moved && cmd._ovTimer > 0.5) { cmd._ovTimer = 0; if (selected) rebuildOverlays(); }
+    if (moved && cmd._ovTimer > 0.5) {
+      cmd._ovTimer = 0;
+      if (selected) { rebuildOverlays(); renderTargetingComputer(selected); }  // firing solutions follow movement
+    }
     updateFiringFx();
     checkFlagshipNet();
   }

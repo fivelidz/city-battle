@@ -126,6 +126,7 @@ namespace CityBattle.Combat
             }
             if (Sim.Command.Flagship == null) Sim.Command.AutoFlagship(Sim.Units, 0);
             if (EnemyAI) Sim.Commanders[1] = new AI.CommanderAI(1, EnemyStance) { UseDrones = true };
+            Sim.Objectives.Begin(Sim, sc);   // start win/lose tracking for this scenario
             Debug.Log($"[Battle] Scenario '{sc.Title}' loaded: {Sim.Units.Count} units, {Sim.Command.Flags.Count} flags, flagship={Sim.Command.Flagship?.Name}");
         }
 
