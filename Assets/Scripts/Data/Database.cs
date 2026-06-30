@@ -108,7 +108,9 @@ namespace CityBattle.Data
                     // New schema columns (backward-compatible: default if absent).
                     maxMountCaliberMm = c.Length > 13 ? F(c[13]) : 999f,
                     crew = c.Length > 14 ? I(c[14]) : 4,
-                    powerOutput = c.Length > 15 ? F(c[15]) : 100f
+                    powerOutput = c.Length > 15 ? F(c[15]) : 100f,
+                    baseCamo = c.Length > 16 ? F(c[16]) : 1f,
+                    commsRangeM = c.Length > 17 ? F(c[17]) : 9000f
                 });
             }
         }

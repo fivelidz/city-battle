@@ -213,7 +213,9 @@ namespace CityBattle.Design
                     legs = legsMm, cupola = cupolaMm, mantlet = mantletMm
                 },
                 Position = pos, PrevPosition = pos,
-                EyeHeight = Mathf.Clamp(c.massBudgetT / 30f, 4f, 12f)
+                EyeHeight = Mathf.Clamp(c.massBudgetT / 30f, 4f, 12f),
+                Camouflage = c.baseCamo > 0 ? c.baseCamo : 1f,
+                CommsRangeM = c.commsRangeM > 0 ? c.commsRangeM : 9000f
             };
             int socket = 0;
             foreach (var gid in weaponGunIds)

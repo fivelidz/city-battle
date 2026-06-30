@@ -80,3 +80,13 @@ tech_id,branch,name,year,starting,chance_pct,cost,effect
 286,Electronic Warfare,Wideband Jamming,2067,0,15,6400,Unlocks wideband jammer (large radius; high strength)
 287,Electronic Warfare,Counter-Swarm Doctrine,2068,0,14,6900,Gradual effectiveness gain of C-UAS against swarm-AI drones
 288,Electronic Warfare,Autonomous EW Management,2069,0,13,7400,Automated jamming/spoofing allocation; gradual EW efficiency gain
+289,Comms & Intel,Tight-Beam Laser Comms,2025,1,100,0,Baseline line-of-sight laser comms net (radio is jammed); units need LOS to relay
+290,Comms & Intel,Improved Optical Links,2034,0,30,2200,+30% comms range; steadier relay over distance
+291,Comms & Intel,Relay Drone Doctrine,2056,0,24,3600,Enables recon/relay drones to bridge comms over terrain (re-broadcast across LOS gaps)
+292,Comms & Intel,Radio Direction Finding,2038,0,26,3000,Unlocks RDF; locate emitting enemy units (jammers/active sensors) without LOS
+293,Comms & Intel,Emission Control Discipline,2042,0,24,2600,Reduces own RDF signature when sensors/jammers are off (go quiet to stay hidden)
+294,Comms & Intel,Adaptive Camouflage,2046,0,22,3400,-25% enemy detection range vs your crabs (camouflage netting/adaptive skin)
+295,Comms & Intel,Active Camouflage,2061,0,16,6200,-45% enemy detection range; very hard to spot until close
+296,Comms & Intel,Mesh / Satellite Comms,2066,0,12,8800,LOS-independent control - removes the comms fog of war (premium endgame unlock)
+297,Sensors,Hardened Sensor Mast,2040,0,24,2800,Comms mast/datalink more resistant to hits (stays on the net longer under fire)
+298,Comms & Intel,Ghost Track Prediction,2050,0,20,3200,Off-net ghost markers drift more slowly - better last-known position estimates

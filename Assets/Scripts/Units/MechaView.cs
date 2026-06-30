@@ -213,6 +213,35 @@ namespace CityBattle.Units
             if (_spottedRing) _spottedRing.SetActive(false);
         }
 
+        GameObject _ghostMarker;
+        /// <summary>Off-net units are dimmed and show a hovering "ghost" beacon at their last-known
+        /// spot. (Visual cue for the line-of-sight comms mechanic.)</summary>
+        public void SetCommsState(bool onNet, bool offNetGhost)
+        {
+            // Dim the body emissive when off the net.
+            if (Body != null)
+            {
+                var r = Body.GetComponent<Renderer>();
+                if (r != null && r.sharedMaterial != null && r.sharedMaterial.HasProperty("_EmissionColor"))
+                    r.sharedMaterial.SetColor("_EmissionColor",
+                        onNet ? r.sharedMaterial.color * 0.2f : Color.black);
+            }
+            if (offNetGhost)
+            {
+                if (_ghostMarker == null)
+                {
+                    _ghostMarker = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                    Strip(_ghostMarker);
+                    _ghostMarker.name = "GhostBeacon";
+                    _ghostMarker.transform.SetParent(transform);
+                    _ghostMarker.transform.localScale = new Vector3(2f, 40f, 2f);
+                    _ghostMarker.transform.localPosition = new Vector3(0, 50f, 0);
+                }
+                _ghostMarker.SetActive(true);
+            }
+            else if (_ghostMarker != null) _ghostMarker.SetActive(false);
+        }
+
         public Transform SocketFor(int index) =>
             (index >= 0 && index < WeaponSockets.Count) ? WeaponSockets[index] : transform;
     }

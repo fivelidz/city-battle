@@ -261,6 +261,43 @@ namespace CityBattle.Tests
             Assert.IsFalse(c.OnNet, "With the relay's comms mast destroyed, C loses comms.");
         }
 
+        // ---- Data-driven intel attributes ----
+        [Test]
+        public void Chassis_HasCamoAndCommsRange()
+        {
+            var recon = _db.Chassis.Find(c => c.cls == ChassisClass.Recon);
+            var siege = _db.Chassis.Find(c => c.cls == ChassisClass.Siege);
+            Assert.Less(recon.baseCamo, siege.baseCamo, "Recon crab should be stealthier (lower camo factor) than a Siege.");
+            Assert.Greater(recon.commsRangeM, 0f, "Comms range should load.");
+            Assert.Greater(recon.commsRangeM, siege.commsRangeM, "Recon should have longer comms reach than a Siege.");
+        }
+
+        [Test]
+        public void Design_InstantiatesWithCamoAndComms()
+        {
+            var recon = _db.Chassis.Find(c => c.cls == ChassisClass.Recon);
+            var d = new MechaDesign { chassisId = recon.id, armorMaterialId = _db.Armors[0].id };
+            var u = d.Instantiate(_db, 0, _db.Nations[0], Vector3.zero);
+            Assert.AreEqual(recon.baseCamo, u.Camouflage, 0.001f, "Camo carries from chassis to the battle unit.");
+            Assert.AreEqual(recon.commsRangeM, u.CommsRangeM, 0.1f, "Comms range carries to the battle unit.");
+        }
+
+        [Test]
+        public void TechTree_HasCommsIntelBranch()
+        {
+            var tree = TechTree.Load();
+            bool hasComms = false, hasRdf = false, hasCamo = false;
+            foreach (var t in tree.Techs)
+            {
+                if (t.branch.Contains("Comms")) hasComms = true;
+                if (t.name.Contains("Direction Finding")) hasRdf = true;
+                if (t.name.Contains("Camouflage")) hasCamo = true;
+            }
+            Assert.IsTrue(hasComms, "Tech tree should have a Comms & Intel branch.");
+            Assert.IsTrue(hasRdf, "RDF tech should exist.");
+            Assert.IsTrue(hasCamo, "Camouflage tech should exist.");
+        }
+
         // ---- Intelligence: camouflage & RDF ----
         [Test]
         public void Camouflage_ReducesDetectionRange()

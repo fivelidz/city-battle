@@ -101,10 +101,12 @@ namespace CityBattle.UI
                 if (u.Team == 0) { p++; if (u.Alive) pa++; }
                 else { e++; if (u.Alive) ea++; }
             }
-            GUILayout.BeginArea(new Rect(Screen.width - 232, 32, 226, 64), _panel);
+            var comms = Combat.CommsNet.Count(Controller.Sim.Units, 0);
+            GUILayout.BeginArea(new Rect(Screen.width - 232, 32, 226, 82), _panel);
             GUILayout.Label("FORCE STATUS", _header);
             GUILayout.Label($"FRIENDLY {pa}/{p} OPERATIONAL", _mono);
             GUILayout.Label($"HOSTILE  {ea}/{e} DETECTED", new GUIStyle(_mono) { normal = { textColor = Red } });
+            GUILayout.Label($"COMMS    {comms.onNet}/{comms.total} ON NET", comms.onNet < comms.total ? StA(Amber) : StA(Cyan));
             GUILayout.EndArea();
         }
 
@@ -133,6 +135,14 @@ namespace CityBattle.UI
                 bool bad = u.Immobilised || u.Disarmed || u.Blinded || u.Sys.OnFire;
                 GUILayout.Label($"SYS    {u.Sys.StatusLine()}", bad ? StA(Red) : StA(Green));
             }
+
+            // Comms (line-of-sight laser net): on-net = controllable + live intel; off-net = ghost.
+            string comms = u.OnNet
+                ? (string.IsNullOrEmpty(u.RelayVia) ? "ON NET (command)" : $"ON NET via {u.RelayVia}")
+                : $"OFF NET — NO CONTACT (ghost {(Controller.Clock.SimTime - u.LastContactTime):0}s)";
+            GUILayout.Label($"COMMS  {comms}", u.OnNet ? StA(Cyan) : StA(Red));
+            if (u.Emitting || u.RdfDetected)
+                GUILayout.Label($"EMCON  {(u.Emitting ? "EMITTING" : "")}{(u.RdfDetected ? "  RDF-LOCATED" : "")}", StA(Amber));
 
             // Armour readout: deck (top) vs side (belt) — the RtW3 distinction.
             GUILayout.Label($"ARMOUR top {u.Armor.carapace:000}  glacis {u.Armor.glacis:000}  flank {u.Armor.flank:000} mm", _small);

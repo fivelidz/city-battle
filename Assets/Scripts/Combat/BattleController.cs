@@ -124,7 +124,9 @@ namespace CityBattle.Combat
                 Chassis = chassis, Armor = armor, Nation = nation,
                 ArmorMaterial = Database.Instance.Armors.Count > 0 ? Database.Instance.Armors[0] : default,
                 Position = pos, PrevPosition = pos, HeadingDeg = team == 0 ? 30f : 210f,
-                EyeHeight = Mathf.Clamp(chassis.massBudgetT / 30f, 4f, 12f)
+                EyeHeight = Mathf.Clamp(chassis.massBudgetT / 30f, 4f, 12f),
+                Camouflage = chassis.baseCamo > 0 ? chassis.baseCamo : 1f,
+                CommsRangeM = chassis.commsRangeM > 0 ? chassis.commsRangeM : 9000f
             };
             u.Weapons.Add(new WeaponInstance { def = gun, mountSocket = 0 });
             u.EnsureSystems();
@@ -181,6 +183,7 @@ namespace CityBattle.Combat
                 v.transform.rotation = Quaternion.Euler(0, u.RenderHeading(alpha), 0);
                 v.SetSpotted(Sim.IsSpotted(u), u.HullDown);
                 v.SetDamageState(u.Immobilised, u.Disarmed, u.Sys?.OnFire ?? false, u.Structure / 100f);
+                if (u.Team == 0) v.SetCommsState(u.OnNet, !u.OnNet && u.HasGhost);  // player comms picture
                 // Aim the turret at the current fire target (or forward if none).
                 v.AimTurret(u.FireTarget != null && u.FireTarget.Alive ? u.FireTarget.EyePosition : (Vector3?)null);
             }

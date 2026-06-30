@@ -21,6 +21,22 @@ You only know what your crabs can **perceive**.
 - **Sensors degrade with weather & damage:** smoke/dust/night cut optical spotting (radar/LIDAR
   mitigate); a destroyed **cupola** blinds the crab; **jamming** can knock out drone spotters.
 
+## Comms & command (the line-of-sight net)
+Radio is too jammed in this world, so the fleet relays orders & intel over **tight-beam laser
+comms** — which need **line of sight**. This is a second fog layer *on top of* vision.
+- **On the net** (a relay chain of friendly crabs/relay-drones with LOS links back to command) →
+  you can **issue orders** and get **live intel**. **Off the net** (no LOS path — e.g. behind a
+  ridge) → you **can't command** it (it follows its last orders) and only a fading **ghost /
+  last-known position** remains until contact is restored.
+- **Relays:** a crab on **high ground** or a **recon/relay drone aloft** bridges LOS gaps and
+  reconnects cut-off units. A **comms mast (datalink) hit** stops a crab transmitting/relaying.
+- **Camouflage** shrinks the range at which enemies detect you (a design/tech attribute; Recon
+  crabs are stealthier, a Siege is easy to spot).
+- **RDF (radio direction finding):** a crab that is **emitting** (active radar, jammer, radio) can
+  be **located by the enemy without LOS** — so practise **emission control** (go quiet to stay
+  hidden). Tech ladder: laser links → improved optics → RDF/EMCON → camouflage → relay drones →
+  **mesh/satellite comms** (late game; removes the comms fog entirely). See `docs/INTELLIGENCE_LAYER.md`.
+
 ## Fire control & hit resolution
 - **Bracketing / straddle:** sustained fire on a still target converges — shorts and overs close
   into a **straddle**, then hits accumulate. Moving (yours or theirs) **resets the bracket**.

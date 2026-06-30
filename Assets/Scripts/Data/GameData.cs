@@ -49,6 +49,8 @@ namespace CityBattle.Data
         public float maxMountCaliberMm;   // largest gun a mount can take
         public int crew;                  // affects damage-control speed
         public float powerOutput;         // gates energy weapons (rail/coil/laser) + EW draw
+        public float baseCamo;            // detection-range multiplier (<1 stealthier, >1 easier to spot)
+        public float commsRangeM;         // tight-beam (LOS) comms reach
 
         public float BaseSpeedMs => baseSpeedKmh / 3.6f;
     }
