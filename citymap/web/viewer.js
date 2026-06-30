@@ -164,6 +164,10 @@
     selectedSet: [], objective: null, flagGroup: null, orderGroup: null, fxGroup: null,
     forceScenario: QS.get("scenario") || "", forcePlay: QS.get("play") === "1",
     netStat: "", flagshipOffNet: false,
+    // objective resolution: win/lose tracking for the active scenario (mirrors the Unity
+    // ObjectiveSystem). holdTimer accrues while the crest is held uncontested; outcome flips
+    // to "win"/"lose" and freezes the sim with a banner.
+    objWin: "", objHold: 0, objHoldReq: 25, objCapM: 600, outcome: "",
   };
   var FLAG_COL = { move: 0x5fd6c6, hold: 0xe8a838, attack: 0xd75a52, objective: 0x7fe6a0 };
 
@@ -2232,14 +2236,36 @@
   }
 
   // ---------- interaction ----------
-  function onClick(e) {
+  // Crabs are tiny on an 11 km map, so a pixel-exact mesh raycast makes selection finicky.
+  // pickUnit() first tries a precise ray hit, then falls back to the NEAREST unit whose
+  // screen position is within PICK_PX pixels of the click — so "click near a crab" just works.
+  var PICK_PX = 34;
+  function pickUnit(e) {
     mouse.x = (e.clientX / innerWidth) * 2 - 1;
     mouse.y = -(e.clientY / innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
     var hits = raycaster.intersectObjects(units, true);
     if (hits.length) {
       var g = hits[0].object; while (g.parent && units.indexOf(g) < 0) g = g.parent;
-      if (units.indexOf(g) >= 0) {
+      if (units.indexOf(g) >= 0) return g;
+    }
+    // proximity fallback: project each unit to screen space, pick the closest within PICK_PX.
+    var best = null, bestD = PICK_PX * PICK_PX, v = new THREE.Vector3();
+    for (var i = 0; i < units.length; i++) {
+      var u = units[i], d = u.userData;
+      v.set(d.x, (d.eye || 0), d.z).project(camera);
+      if (v.z > 1) continue;                       // behind the camera
+      var sx = (v.x * 0.5 + 0.5) * innerWidth;
+      var sy = (-v.y * 0.5 + 0.5) * innerHeight;
+      var dd = (sx - e.clientX) * (sx - e.clientX) + (sy - e.clientY) * (sy - e.clientY);
+      if (dd < bestD) { bestD = dd; best = u; }
+    }
+    return best;
+  }
+  function onClick(e) {
+    var g = pickUnit(e);
+    if (g) {
+      {
         // command mode: SHIFT-click adds a friendly to the multi-select set (formation);
         // clicking a hostile while a friendly is selected sets it as the engage TARGET.
         if (cmd.on && e.shiftKey && g.userData.side === "friend") {
@@ -3110,6 +3136,84 @@
     }
     updateFiringFx();
     checkFlagshipNet();
+    evalObjective(dt);
+  }
+
+  // ---------- OBJECTIVE RESOLUTION (web demo win/lose) ----------
+  // Mirrors the Unity ObjectiveSystem: per scenario, decide victory/defeat each step and surface
+  // progress (hold timer / convoy distance / kills) in the OBJECTIVE readout, then freeze on result.
+  function aliveCount(side) {
+    var n = 0; units.forEach(function (g) {
+      if (g.userData.side === side && g.userData.cmd && !g.userData.cmd.ko) n++;
+    }); return n;
+  }
+  function nearObjective(side) {
+    if (!cmd.objective) return false;
+    var o = cmd.objective.userData, hit = false;
+    units.forEach(function (g) {
+      var d = g.userData;
+      if (d.side === side && d.cmd && !d.cmd.ko &&
+          Math.hypot(d.x - o.fx, d.z - o.fz) < cmd.objCapM) hit = true;
+    }); return hit;
+  }
+  function unitByNamePart(part) {
+    for (var i = 0; i < units.length; i++)
+      if (units[i].userData.name && units[i].userData.name.indexOf(part) >= 0) return units[i];
+    return null;
+  }
+  function setObjReadout(txt) {
+    var co = document.getElementById("cObj"); if (co) co.textContent = txt;
+  }
+  function evalObjective(dt) {
+    if (!cmd.on || cmd.outcome || !cmd.objWin) return;
+    var friend = aliveCount("friend"), enemy = aliveCount("hostile");
+    if (friend === 0) { return objectiveOutcome("lose", "FORCE ELIMINATED"); }
+
+    if (cmd.objWin === "eliminate") {
+      if (enemy === 0) return objectiveOutcome("win", "ENEMY ELIMINATED");
+      setObjReadout((cmd._objName || "ELIMINATE") + " — " + enemy + " left");
+
+    } else if (cmd.objWin === "hold") {
+      var held = nearObjective("friend"), contested = nearObjective("hostile");
+      if (held && !contested) cmd.objHold += dt;
+      else cmd.objHold = Math.max(0, cmd.objHold - dt * 0.5);
+      setObjReadout("HOLD " + Math.floor(cmd.objHold) + "/" + cmd.objHoldReq + "s" +
+                    (contested ? " (CONTESTED)" : held ? "" : " (UNHELD)"));
+      if (cmd.objHold >= cmd.objHoldReq) return objectiveOutcome("win", "OBJECTIVE SECURED");
+      if (enemy === 0) return objectiveOutcome("win", "ENEMY ELIMINATED");
+
+    } else if (cmd.objWin === "escort") {
+      var convoy = unitByNamePart("CONVOY");
+      if (!convoy || convoy.userData.cmd.ko) return objectiveOutcome("lose", "CONVOY LOST");
+      if (cmd.objective) {
+        var o = cmd.objective.userData;
+        var dist = Math.hypot(convoy.userData.x - o.fx, convoy.userData.z - o.fz);
+        if (dist < cmd.objCapM) return objectiveOutcome("win", "CONVOY REACHED EXIT");
+        setObjReadout("CONVOY " + (dist / 1000).toFixed(1) + "km FROM EXIT");
+      }
+    }
+  }
+  function objectiveOutcome(result, msg) {
+    cmd.outcome = result;
+    showObjectiveBanner(result, msg);
+    setPlaying(false);                          // freeze the battle on a result
+    combatLog('<span class="' + (result === "win" ? "a" : "h") + '">' +
+              (result === "win" ? "VICTORY" : "DEFEAT") + " — " + msg + '</span>',
+              result === "win" ? "hit" : "ko");
+  }
+  function showObjectiveBanner(result, msg) {
+    var b = document.getElementById("objBanner");
+    if (!b) {
+      b = document.createElement("div"); b.id = "objBanner";
+      document.body.appendChild(b);
+    }
+    b.className = result;                        // .win / .lose styles colour it
+    b.innerHTML = '<div class="bt">' + (result === "win" ? "VICTORY" : "DEFEAT") +
+                  '</div><div class="bs">' + msg + '</div>';
+    b.style.display = "block";
+  }
+  function hideObjectiveBanner() {
+    var b = document.getElementById("objBanner"); if (b) b.style.display = "none";
   }
 
   // Decide a unit's combat target and resolve damage over time. Units FIRE WHILE MOVING
@@ -3377,6 +3481,11 @@
     cmd.objective = null;
     clearSuburbObjectives();
     units.forEach(function (g) { clearOrders(g); });
+    // reset objective resolution for the new scenario
+    cmd.objHold = 0; cmd.outcome = ""; hideObjectiveBanner();
+    cmd.objWin = key === "harbour_crossing" ? "hold"
+              : key === "ridge_defence"    ? "eliminate"
+              : key === "convoy_escort"    ? "escort" : "";
     var u = units;   // 6 demo units
     var objName = "—";
     if (key === "harbour_crossing") {

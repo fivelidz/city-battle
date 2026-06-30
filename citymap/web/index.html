@@ -70,6 +70,16 @@
   #cmdHint{position:fixed;bottom:88px;left:10px;width:300px;font-size:9.5px;color:var(--dim);
     line-height:1.7;letter-spacing:.02em;background:var(--panel);border:1px solid var(--hair);padding:7px 9px;display:none}
   #cmdHint .a{color:var(--amber)} #cmdHint .m{color:#5fd6c6} #cmdHint .at{color:#d75a52}
+  /* ===== OBJECTIVE RESULT BANNER ===== */
+  #objBanner{position:fixed;top:34%;left:50%;transform:translate(-50%,-50%);z-index:20;display:none;
+    text-align:center;padding:18px 40px;background:rgba(13,17,16,.92);backdrop-filter:blur(3px);
+    pointer-events:none;clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)}
+  #objBanner .bt{font-size:34px;font-weight:bold;letter-spacing:.30em}
+  #objBanner .bs{font-size:12px;letter-spacing:.16em;color:var(--dim);margin-top:8px}
+  #objBanner.win{border:1px solid #7fe6a0;box-shadow:0 0 30px rgba(127,230,160,.18)}
+  #objBanner.win .bt{color:#7fe6a0}
+  #objBanner.lose{border:1px solid var(--red);box-shadow:0 0 30px rgba(154,58,51,.2)}
+  #objBanner.lose .bt{color:var(--red)}
   /* ===== COMPASS HUD (top-right) ===== */
   #compassHud{position:fixed;top:42px;right:212px;width:108px;z-index:5;
     background:var(--panel);border:1px solid var(--hair);padding:6px 6px 4px;backdrop-filter:blur(2px);
