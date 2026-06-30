@@ -85,17 +85,38 @@
   var viewMode = (QS.get("mode") === "elevation") ? "elevation" : "shaded";
 
   var scene, camera, renderer, controls, raycaster, mouse;
-  var map = null, terrainMesh = null, terrainField = null, buildingsGroup = null;
+  var map = null, terrainMesh = null, terrainField = null, buildingsGroup = null, roadsGroup = null;
   var unitsGroup = null, overlayGroup = null, wireMesh = null;
-  var windGroup = null, rainGroup = null, suburbGroup = null;
+  var windGroup = null, rainGroup = null, suburbGroup = null, compassGroup = null;
   var units = [], selected = null;
-  var show = { los: true, range: true, bld: true, wire: false, wind: false, rain: false,
-               suburbs: QS.get("suburbs") === "1", fogcull: QS.get("fogcull") === "1",
+  var show = { los: true, range: true, bld: true, roads: QS.get("roads") !== "0", wire: false, wind: false, rain: false,
+               suburbs: QS.get("suburbs") !== "0", fogcull: QS.get("fogcull") === "1",
+               subnames: QS.get("names") === "1",
                fire: false, slope: false, comms: QS.get("comms") === "1",
-               deadzones: false };
+               deadzones: false, shaderange: QS.get("shadeoutrange") === "1",
+               netlos: QS.get("netlos") === "1" };
+
+  // PREVIEW MODE: "current" (default) | "arrival" — compute range+LOS+dead-zones as if the
+  // selected unit were already standing on its current MOVE-flag destination.
+  var previewMode = (QS.get("arrival") === "1") ? "arrival" : "current";
+
+  // SOUND: WebAudio fire/impact SFX, gated behind a toggle. Default OFF (silent for headless
+  // screenshots). ?sound=1 force-enables.
+  var soundOn = (QS.get("sound") === "1");
+
+  // SIM SPEED multiplier (1x/2x/3x/4x) — scales movement + combat update rate. Default 1x slow.
+  var simSpeed = clamp(parseFloat(QS.get("speed")) || 1, 1, 4);
+
+  // ?topo=1 shows the bare topographic terrain (no LOS/viewshed shading) — a clean map review.
+  if (QS.get("topo") === "1") { show.los = false; }
 
   // ?slope=1 force-enables the SLOPE / trafficability overlay for screenshots.
   if (QS.get("slope") === "1") { show.slope = true; show.los = false; }
+
+  // ?shadeoutrange=1 force-enables the SHADE OUT OF RANGE overlay for the selected unit.
+  if (show.shaderange) { show.los = false; }
+  // ?netlos=1 force-enables the collective NET LINE OF SIGHT overlay.
+  if (show.netlos) { show.los = false; show.comms = true; }
 
   // ?deadzones=1 force-enables the FIRE PICTURE (direct-fire dead-zone) shading for the
   // selected unit (screenshots). It replaces the plain viewshed on the selected unit's terrain.
@@ -123,6 +144,7 @@
     dragging: false, lastX: 0, lastY: 0,
     clock: null,
   };
+  var flyBootDone = false;   // fly-cam-on-by-default only fires once per session
   var buildingMeshes = [];    // chunked building meshes (for fog-cull); fallback: single merged mesh
   var buildingChunks = [];    // [{mesh, cx, cz, top}] centroid metadata per chunk for fog-cull
 
@@ -144,6 +166,65 @@
     netStat: "", flagshipOffNet: false,
   };
   var FLAG_COL = { move: 0x5fd6c6, hold: 0xe8a838, attack: 0xd75a52, objective: 0x7fe6a0 };
+
+  // ---------- COMBAT LOG + SOUND + FX state (item G16) ----------
+  var clogLines = [];          // recent combat log entries (newest last)
+  var CLOG_MAX = 40;
+  var audioCtx = null;         // lazily-created WebAudio context (only when SOUND is on)
+
+  // Append a line to the scrolling combat log panel. kind = "" | "hit" | "ko" for styling.
+  function combatLog(html, kind) {
+    var body = document.getElementById("clogBody");
+    if (!body) return;
+    clogLines.push({ html: html, kind: kind || "" });
+    if (clogLines.length > CLOG_MAX) clogLines.shift();
+    // column-reverse layout: newest first visually, so render newest -> oldest
+    var out = "";
+    for (var i = clogLines.length - 1; i >= 0; i--) {
+      out += '<div class="ln ' + clogLines[i].kind + '">' + clogLines[i].html + "</div>";
+    }
+    body.innerHTML = out;
+  }
+
+  // Generate a short WebAudio "boom" (fire) or "thud" (impact). No asset files. Gated by soundOn.
+  function playSfx(kind) {
+    if (!soundOn) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var now = audioCtx.currentTime;
+      if (kind === "fire") {
+        // low oscillator burst + noise transient = a muffled gun "boom"
+        var osc = audioCtx.createOscillator(); var g = audioCtx.createGain();
+        osc.type = "sawtooth"; osc.frequency.setValueAtTime(120, now);
+        osc.frequency.exponentialRampToValueAtTime(46, now + 0.18);
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.16, now + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+        osc.connect(g).connect(audioCtx.destination); osc.start(now); osc.stop(now + 0.24);
+        addNoiseBurst(now, 0.10, 0.07);
+      } else { // impact thud
+        var o2 = audioCtx.createOscillator(); var g2 = audioCtx.createGain();
+        o2.type = "square"; o2.frequency.setValueAtTime(90, now);
+        o2.frequency.exponentialRampToValueAtTime(38, now + 0.12);
+        g2.gain.setValueAtTime(0.0001, now);
+        g2.gain.exponentialRampToValueAtTime(0.11, now + 0.008);
+        g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+        o2.connect(g2).connect(audioCtx.destination); o2.start(now); o2.stop(now + 0.18);
+        addNoiseBurst(now, 0.06, 0.05);
+      }
+    } catch (e) { /* audio unavailable — ignore */ }
+  }
+  function addNoiseBurst(now, dur, vol) {
+    var n = Math.floor(audioCtx.sampleRate * dur);
+    var buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+    var data = buf.getChannelData(0);
+    for (var i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    var src = audioCtx.createBufferSource(); src.buffer = buf;
+    var g = audioCtx.createGain(); g.gain.setValueAtTime(vol, now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    src.connect(g).connect(audioCtx.destination); src.start(now);
+  }
 
   // ---------- boot ----------
   function init() {
@@ -205,12 +286,13 @@
   }
 
   function clearScene() {
-    [terrainMesh, buildingsGroup, unitsGroup, overlayGroup, wireMesh, windGroup, rainGroup, suburbGroup, fireGroup,
-     cmd.flagGroup, cmd.orderGroup, cmd.fxGroup].forEach(function (o) {
+    [terrainMesh, buildingsGroup, roadsGroup, unitsGroup, overlayGroup, wireMesh, windGroup, rainGroup, suburbGroup, suburbNameGroup, fireGroup,
+     compassGroup, cmd.flagGroup, cmd.orderGroup, cmd.fxGroup].forEach(function (o) {
       if (o) { scene.remove(o); }
     });
-    terrainMesh = buildingsGroup = unitsGroup = overlayGroup = wireMesh = null;
-    windGroup = rainGroup = suburbGroup = fireGroup = null;
+    terrainMesh = buildingsGroup = roadsGroup = unitsGroup = overlayGroup = wireMesh = null;
+    windGroup = rainGroup = suburbGroup = suburbNameGroup = fireGroup = compassGroup = null;
+    suburbMarkers = [];
     cmd.flagGroup = cmd.orderGroup = cmd.fxGroup = null;
     cmd.flagship = null; cmd.selectedSet = []; cmd.objective = null;
     buildingMeshes = []; buildingChunks = [];
@@ -265,11 +347,17 @@
     // ----- buildings -----
     buildBuildings();
 
+    // ----- roads (OSM highways draped on the terrain) -----
+    buildRoads();
+
     // ----- weather overlays (wind arrows, rain) + readout -----
     buildWeather();
 
     // ----- suburb / locality overlay (labels + boundary markers) -----
     buildSuburbs();
+
+    // ----- TRUE-NORTH compass edge labels (N/S/E/W at the map edges) -----
+    buildCompass();
 
     // ----- demo units + overlays -----
     placeDemoUnits();
@@ -284,6 +372,14 @@
 
     // ----- camera framing -----
     frameCamera();
+
+    // FREE/FLY CAM ON BY DEFAULT: enable fly so WASD moves immediately on load (item A).
+    // ?fly=0 keeps orbit-by-default (e.g. some screenshots want a fixed framing).
+    if (!cmd.forceScenario && !cmd.forcePlay && QS.get("fly") !== "0" && !flyBootDone) {
+      flyBootDone = true;
+      // pull the camera back a touch and look down-forward so fly starts framed on the theatre
+      setFly(true);
+    }
 
     // ----- HUD text -----
     document.getElementById("cityName").textContent = map.display;
@@ -360,6 +456,61 @@
     buildingsGroup.visible = show.bld;
     scene.add(buildingsGroup);
     applyFogCull();   // honour current fog-cull state on (re)build
+  }
+
+  // ----- ROADS: OSM highways draped over the terrain -----
+  // Bigger roads (motorway/trunk/primary) draw wider & brighter; residential thin & dim.
+  var ROAD_STYLE = {
+    motorway:      { w: 26, c: 0xc8a24a }, "motorway_link": { w: 16, c: 0xc8a24a },
+    trunk:         { w: 22, c: 0xc09a48 }, "trunk_link":    { w: 14, c: 0xc09a48 },
+    primary:       { w: 18, c: 0xb08a40 }, "primary_link":  { w: 12, c: 0xb08a40 },
+    secondary:     { w: 13, c: 0x9a8048 }, "secondary_link":{ w: 10, c: 0x9a8048 },
+    tertiary:      { w: 9,  c: 0x86764a }, "tertiary_link": { w: 8,  c: 0x86764a },
+    residential:   { w: 5,  c: 0x6f6a52 }, unclassified:    { w: 5, c: 0x6f6a52 },
+    living_street: { w: 4,  c: 0x645f4c }
+  };
+  function buildRoads() {
+    roadsGroup = new THREE.Group();
+    var roads = map.roads || [];
+    if (!roads.length) { roadsGroup.visible = false; scene.add(roadsGroup); return; }
+    // One mesh per style (group thin/wide) using ribbon strips draped on the terrain.
+    var byStyle = {};
+    for (var i = 0; i < roads.length; i++) {
+      var rd = roads[i];
+      var st = ROAD_STYLE[rd.kind] || ROAD_STYLE.residential;
+      var key = rd.kind;
+      if (!byStyle[key]) byStyle[key] = { verts: [], st: st };
+      ribbon(rd.path, st.w, byStyle[key].verts);
+    }
+    Object.keys(byStyle).forEach(function (k) {
+      var s = byStyle[k];
+      if (!s.verts.length) return;
+      var g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(s.verts, 3));
+      g.computeVertexNormals();
+      var m = new THREE.MeshBasicMaterial({ color: s.st.c, transparent: true, opacity: 0.85,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      roadsGroup.add(new THREE.Mesh(g, m));
+    });
+    roadsGroup.visible = show.roads;
+    scene.add(roadsGroup);
+
+    // Build a flat ribbon (two triangles per segment) along a polyline, draped +1.5m on terrain.
+    function ribbon(path, width, out) {
+      var hw = width * 0.5;
+      for (var j = 0; j < path.length - 1; j++) {
+        var ax = path[j][0], az = path[j][1], bx = path[j + 1][0], bz = path[j + 1][1];
+        // skip segments entirely outside the map
+        if ((ax < -50 && bx < -50) || (ax > map.size_m[0] + 50 && bx > map.size_m[0] + 50)) continue;
+        var dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz); if (len < 0.5) continue;
+        var nx = -dz / len * hw, nz = dx / len * hw;   // perpendicular offset
+        var aly = heightAt(ax, az) + 1.5, bly = heightAt(bx, bz) + 1.5;
+        var p1 = [ax + nx, aly, az + nz], p2 = [ax - nx, aly, az - nz];
+        var p3 = [bx + nx, bly, bz + nz], p4 = [bx - nx, bly, bz - nz];
+        out.push(p1[0],p1[1],p1[2], p2[0],p2[1],p2[2], p3[0],p3[1],p3[2]);
+        out.push(p2[0],p2[1],p2[2], p4[0],p4[1],p4[2], p3[0],p3[1],p3[2]);
+      }
+    }
   }
 
   // Triangulate a building footprint (fan) + extrude its walls; append to vert/col arrays.
@@ -498,25 +649,60 @@
   }
   function dirText(deg) {
     var dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
-    return dirs[Math.round(((deg % 360) / 22.5)) % 16];
+    return dirs[Math.round((((deg % 360) + 360) % 360 / 22.5)) % 16];
+  }
+
+  // ---------- COMPASS / BEARING HELPERS ----------
+  // World frame: +X = EAST, +Z = NORTH, -X = WEST, -Z = SOUTH (true to real geography).
+  // Bearing from a direction vector (dx = east component, dz = north component):
+  //   bearing = (atan2(east, north) in degrees + 360) % 360 ; 0=N, 90=E, 180=S, 270=W.
+  function bearingFromVec(dx, dz) {
+    return (Math.atan2(dx, dz) * 180 / Math.PI + 360) % 360;
+  }
+  // 8-point compass label from a bearing in degrees (0=N,45=NE,...).
+  function compass8(deg) {
+    var dirs = ["N","NE","E","SE","S","SW","W","NW"];
+    return dirs[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+  }
+  function bearingTxt(deg) {
+    var b = Math.round(((deg % 360) + 360) % 360);
+    return ("00" + b).slice(-3) + " " + compass8(b);
   }
 
   // ---------- SUBURB / LOCALITY OVERLAY ----------
   // Project the hardcoded SUBURBS list into the map's local-metre frame and place a floating
   // canvas-sprite label + a small ground marker at each locality that falls inside the map.
+  // SUBURBS as NEON BORDERS (item E). Each in-map locality gets a small glowing neon ring/disc
+  // marker on the terrain (Eva-neon cyan, alternating magenta), plus an optional big NAME label
+  // gated behind the separate SUBURB NAMES toggle (suburbNameGroup, default off). The neon ring
+  // can show an OBJECTIVE state (amber=HOLD, green=PROTECT) so scenarios can flag a site.
+  // suburbMarkers[] keeps a handle to each ring so we can recolour objective state and so the
+  // markers PERSIST for the whole session (never wiped by overlay rebuilds — they live in their
+  // own groups, separate from overlayGroup).
+  var suburbMarkers = [];        // [{name, x, z, ring, glowMat, baseCol, objState}]
+  var suburbNameGroup = null;    // big name labels (own toggle)
   function buildSuburbs() {
     suburbGroup = new THREE.Group();
     suburbGroup.visible = show.suburbs;
     scene.add(suburbGroup);
+    suburbNameGroup = new THREE.Group();
+    suburbNameGroup.visible = show.suburbs && show.subnames;
+    scene.add(suburbNameGroup);
+    suburbMarkers = [];
 
     if (!map || !map.bbox) return;
-    var west = map.bbox[0], south = map.bbox[1], east = map.bbox[2], north = map.bbox[3];
-    var midlat = (south + north) / 2;
+    var west = map.bbox[0], south = map.bbox[1];
+    var midlat = (south + map.bbox[3]) / 2;
     var mPerLon = 111320 * Math.cos(midlat * Math.PI / 180);
     var mPerLat = 111320;
     var W = map.size_m[0], L = map.size_m[1];
     var span = Math.max(W, L);
-    var lift = Math.max(120, span * 0.020);   // float labels above the terrain
+    var lift = Math.max(150, span * 0.024);   // float NAME labels above the terrain
+    // neon ring radius: small + tasteful, scales with the map
+    var ringR = Math.max(70, span * 0.011);
+
+    // neon palette: cyan + magenta alternate for an Eva-neon read; objective states override.
+    var NEON = [0x35e0d0, 0xe65cc8];
 
     var placed = 0;
     for (var i = 0; i < SUBURBS.length; i++) {
@@ -525,28 +711,247 @@
       var z = (s[2] - south) * mPerLat;    // north metres from origin
       if (x < 0 || x > W || z < 0 || z > L) continue;   // outside this map
       var gy = heightAt(x, z);
+      var neon = NEON[placed % 2];
 
-      // floating text label (canvas sprite, muted Eva style)
+      var mk = makeSuburbMarker(x, gy, z, ringR, neon);
+      suburbGroup.add(mk.group);
+
+      // big NAME label (own group / toggle, default off)
       var spr = makeLabelSprite(s[0], span);
       spr.position.set(x, gy + lift, z);
-      suburbGroup.add(spr);
-
-      // thin "tether" line from the label down to the ground marker
+      suburbNameGroup.add(spr);
       var tg = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(x, gy + lift, z), new THREE.Vector3(x, gy + 4, z)]);
-      suburbGroup.add(new THREE.Line(tg, new THREE.LineBasicMaterial({
+        new THREE.Vector3(x, gy + lift, z), new THREE.Vector3(x, gy + 6, z)]);
+      suburbNameGroup.add(new THREE.Line(tg, new THREE.LineBasicMaterial({
         color: 0x6d8378, transparent: true, opacity: 0.30 })));
 
-      // ground boundary marker: a faint ring locating the locality centroid
-      var ringR = Math.max(60, span * 0.012);
-      var ring = new THREE.Mesh(
-        new THREE.RingGeometry(ringR * 0.9, ringR, 28),
-        new THREE.MeshBasicMaterial({ color: 0x7d9387, transparent: true, opacity: 0.28, side: THREE.DoubleSide }));
-      ring.rotation.x = -Math.PI / 2; ring.position.set(x, gy + 3, z);
-      suburbGroup.add(ring);
+      suburbMarkers.push({ name: s[0], x: x, z: z, ringR: ringR,
+        ring: mk.ring, glow: mk.glow, glowMat: mk.glowMat, ringMat: mk.ringMat,
+        baseCol: neon, objState: null });
       placed++;
     }
     suburbGroup.userData = { placed: placed };
+  }
+
+  // Build one neon suburb marker: a thin glowing ring + a soft inner glow disc + a small
+  // upright pip, on the terrain. Returns handles so its colour can switch for objective state.
+  function makeSuburbMarker(x, gy, z, ringR, colInt) {
+    var grp = new THREE.Group();
+    grp.position.set(x, 0, z);
+    // thin bright neon ring (two stacked ring meshes for a faux-bloom outline)
+    var ringMat = new THREE.MeshBasicMaterial({ color: colInt, transparent: true, opacity: 0.95,
+      side: THREE.DoubleSide, depthWrite: false });
+    var ring = new THREE.Mesh(new THREE.RingGeometry(ringR * 0.86, ringR, 40), ringMat);
+    ring.rotation.x = -Math.PI / 2; ring.position.y = gy + 4; ring.renderOrder = 11;
+    grp.add(ring);
+    // soft glow halo (wider, faint) — the neon "bloom"
+    var glowMat = new THREE.MeshBasicMaterial({ color: colInt, transparent: true, opacity: 0.16,
+      side: THREE.DoubleSide, depthWrite: false });
+    var glow = new THREE.Mesh(new THREE.RingGeometry(ringR * 0.55, ringR * 1.5, 40), glowMat);
+    glow.rotation.x = -Math.PI / 2; glow.position.y = gy + 3; glow.renderOrder = 10;
+    grp.add(glow);
+    // tiny centre pip
+    var pip = new THREE.Mesh(new THREE.CircleGeometry(ringR * 0.12, 16),
+      new THREE.MeshBasicMaterial({ color: colInt, transparent: true, opacity: 0.9, depthWrite: false }));
+    pip.rotation.x = -Math.PI / 2; pip.position.y = gy + 5; pip.renderOrder = 12;
+    grp.add(pip);
+    return { group: grp, ring: ring, ringMat: ringMat, glow: glow, glowMat: glowMat, pip: pip };
+  }
+
+  // Mark a suburb as an OBJECTIVE site: state = "hold" (amber) | "protect" (green) | null (neon).
+  // Scenarios / command mode can call this to flag a locality as a hold/protect site (item E9).
+  function setSuburbObjective(nameOrIdx, state) {
+    var m = null;
+    if (typeof nameOrIdx === "number") m = suburbMarkers[nameOrIdx];
+    else m = suburbMarkers.filter(function (s) { return s.name === nameOrIdx; })[0];
+    if (!m) return null;
+    m.objState = state;
+    var col = state === "hold" ? 0xe8a838 : state === "protect" ? 0x7fe6a0 : m.baseCol;
+    m.ringMat.color.setHex(col); m.glowMat.color.setHex(col);
+    m.ringMat.opacity = state ? 1.0 : 0.95;
+    m.glowMat.opacity = state ? 0.30 : 0.16;
+    return m;
+  }
+
+  // ---------- TRUE-NORTH COMPASS EDGE LABELS ----------
+  // Big muted-amber N / S / E / W sprites at the OUTSIDE edge midpoints of the terrain.
+  // World frame: +X=EAST (x=W), -X=WEST (x=0), +Z=NORTH (z=L), -Z=SOUTH (z=0). Because the
+  // map is built from real lon/lat this is TRUE north — N always marks real geographic north.
+  // Sprites billboard, so they stay readable while the camera orbits, but their world positions
+  // are fixed, so they correctly track the map's true orientation.
+  function buildCompass() {
+    compassGroup = new THREE.Group();
+    scene.add(compassGroup);
+    if (!map) return;
+    var W = map.size_m[0], L = map.size_m[1];
+    var span = Math.max(W, L);
+    var out = span * 0.045;                  // push the label slightly OUTSIDE the map edge
+    var lift = Math.max(180, span * 0.030);  // float above the terrain at the edge
+    // [text, x, z]  — placed just beyond each edge midpoint
+    var marks = [
+      ["N", W / 2,      L + out],   // +Z edge = NORTH
+      ["S", W / 2,      -out    ],  // -Z edge = SOUTH
+      ["E", W + out,    L / 2   ],  // +X edge = EAST
+      ["W", -out,       L / 2   ],  // -X edge = WEST
+    ];
+    for (var i = 0; i < marks.length; i++) {
+      var m = marks[i];
+      var spr = makeCompassSprite(m[0], span);
+      // ground height at the clamped edge point so the label floats a sensible height
+      var gx = clamp(m[1], 0, W), gz = clamp(m[2], 0, L);
+      spr.position.set(m[1], heightAt(gx, gz) + lift, m[2]);
+      compassGroup.add(spr);
+      // faint tether down toward the edge so the label reads as "this edge"
+      var tg = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(m[1], heightAt(gx, gz) + lift, m[2]),
+        new THREE.Vector3(m[1], heightAt(gx, gz) + 10, m[2])]);
+      compassGroup.add(new THREE.Line(tg, new THREE.LineBasicMaterial({
+        color: 0xb0822c, transparent: true, opacity: 0.30 })));
+    }
+  }
+
+  // Big bold cardinal-letter sprite (muted amber, Eva style). Larger than suburb labels so the
+  // N/S/E/W read clearly at the default camera framing.
+  function makeCompassSprite(letter, span) {
+    var S = 256, cv = document.createElement("canvas"); cv.width = cv.height = S;
+    var ctx = cv.getContext("2d");
+    // round-ish dark backing disc with an amber rim
+    ctx.beginPath(); ctx.arc(S/2, S/2, S/2 - 10, 0, Math.PI*2);
+    ctx.fillStyle = "rgba(13,17,16,0.78)"; ctx.fill();
+    ctx.lineWidth = 7; ctx.strokeStyle = "rgba(176,130,44,0.85)"; ctx.stroke();
+    ctx.font = "bold 168px DejaVu Sans Mono, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = (letter === "N") ? "rgba(232,168,56,0.98)" : "rgba(176,130,44,0.95)";
+    ctx.fillText(letter, S/2, S/2 + 8);
+    var tex = new THREE.CanvasTexture(cv); tex.anisotropy = 4; tex.needsUpdate = true;
+    var mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false });
+    var spr = new THREE.Sprite(mat);
+    spr.renderOrder = 22;
+    var sz = Math.max(420, span * 0.060);   // big and clearly visible
+    spr.scale.set(sz, sz, 1);
+    return spr;
+  }
+
+  // ---------- HUD COMPASS ROSE (DOM overlay) ----------
+  // A fixed N-up 2D dial in the top-right. A muted-amber needle points the way the CAMERA is
+  // looking (its ground heading relative to TRUE north) so the player always knows orientation
+  // even zoomed/rotated. Bearing 0=N, 90=E, 180=S, 270=W — consistent with the wind readout.
+  function cameraHeadingDeg() {
+    // direction the camera is looking, projected onto the ground (x=east, z=north)
+    var dir;
+    if (fly.on) {
+      dir = flyForward();
+    } else if (controls) {
+      dir = new THREE.Vector3().subVectors(controls.target, camera.position);
+    } else { return 0; }
+    return bearingFromVec(dir.x, dir.z);
+  }
+  function drawCompassRose(canvas, headingDeg, opts) {
+    if (!canvas) return;
+    var ctx = canvas.getContext("2d");
+    var w = canvas.width, h = canvas.height, cx = w/2, cy = h/2, R = Math.min(cx, cy) - 4;
+    ctx.clearRect(0, 0, w, h);
+    var ringCol = opts && opts.ring || "rgba(120,140,130,0.35)";
+    var tickCol = "rgba(120,140,130,0.55)";
+    var labCol  = "rgba(176,130,44,0.92)";   // muted amber
+    // outer ring
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2);
+    ctx.strokeStyle = ringCol; ctx.lineWidth = 1.5; ctx.stroke();
+    // cardinal ticks + letters (N up). The DIAL is fixed; the needle rotates.
+    var cards = [["N",0],["E",90],["S",180],["W",270]];
+    var fs = Math.max(9, Math.round(R * 0.34));
+    ctx.font = "bold " + fs + "px DejaVu Sans Mono, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (var i = 0; i < cards.length; i++) {
+      var a = cards[i][1] * Math.PI/180;          // 0=N -> up
+      var sx = cx + Math.sin(a) * R, sy = cy - Math.cos(a) * R;
+      var ix = cx + Math.sin(a) * (R - 6), iy = cy - Math.cos(a) * (R - 6);
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ix, iy);
+      ctx.strokeStyle = tickCol; ctx.lineWidth = 1.5; ctx.stroke();
+      var lx = cx + Math.sin(a) * (R - fs*0.8), ly = cy - Math.cos(a) * (R - fs*0.8);
+      ctx.fillStyle = (cards[i][0] === "N") ? "rgba(232,168,56,0.98)" : labCol;
+      ctx.fillText(cards[i][0], lx, ly);
+    }
+    // needle pointing along the heading
+    var ha = headingDeg * Math.PI/180;
+    var nx = cx + Math.sin(ha) * (R - 10), ny = cy - Math.cos(ha) * (R - 10);
+    var bx = cx - Math.sin(ha) * (R*0.45), by = cy + Math.cos(ha) * (R*0.45);
+    // tail (dim)
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(bx, by);
+    ctx.strokeStyle = "rgba(93,109,100,0.7)"; ctx.lineWidth = 2; ctx.stroke();
+    // head (amber arrow)
+    var headCol = opts && opts.needle || "rgba(232,168,56,0.95)";
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(nx, ny);
+    ctx.strokeStyle = headCol; ctx.lineWidth = 2.5; ctx.stroke();
+    // arrowhead
+    var perp = ha + Math.PI/2, ah = R*0.16;
+    ctx.beginPath();
+    ctx.moveTo(nx, ny);
+    ctx.lineTo(nx - Math.sin(ha)*ah + Math.sin(perp)*ah*0.6, ny + Math.cos(ha)*ah - Math.cos(perp)*ah*0.6);
+    ctx.lineTo(nx - Math.sin(ha)*ah - Math.sin(perp)*ah*0.6, ny + Math.cos(ha)*ah + Math.cos(perp)*ah*0.6);
+    ctx.closePath(); ctx.fillStyle = headCol; ctx.fill();
+    // hub
+    ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI*2);
+    ctx.fillStyle = "rgba(176,130,44,0.9)"; ctx.fill();
+  }
+  function updateCompassHud() {
+    var hd = cameraHeadingDeg();
+    drawCompassRose(document.getElementById("compassCanvas"), hd);
+    var el = document.getElementById("compassBrg");
+    if (el) el.textContent = ("00" + Math.round(hd)).slice(-3) + "\u00B0 " + compass8(hd);
+  }
+
+  // ---------- UNIT-PANEL FACING COMPASS ----------
+  // Bearing of the selected unit's facing (g.rotation.y -> ground heading). Also, if the unit has
+  // a current order/target, show the bearing+range to it. Consistent with the wind readout.
+  function unitFacingDeg(g) {
+    // The hull is built with the prow along +Z (local north). rotation.y rotates that facing.
+    // A rotation of ry about Y maps local +Z to world (sin ry, cos ry) in (x,z) -> bearing = ry.
+    var ry = g.rotation.y || 0;
+    return (ry * 180 / Math.PI % 360 + 360) % 360;
+  }
+  // Find a bearing+range to the unit's current objective flag (command mode) or remembered target.
+  function unitTargetInfo(g) {
+    var d = g.userData;
+    var tx = null, tz = null;
+    if (d.cmd && d.cmd.flags && d.cmd.flags.length) {
+      var idx = Math.min(d.cmd.targetIdx || 0, d.cmd.flags.length - 1);
+      var f = d.cmd.flags[idx].userData;
+      tx = f.fx; tz = f.fz;
+    } else if (cmd.target && cmd.target !== g) {
+      tx = cmd.target.userData.x; tz = cmd.target.userData.z;
+    }
+    if (tx == null) return null;
+    var dx = tx - d.x, dz = tz - d.z;
+    var rng = Math.sqrt(dx*dx + dz*dz);
+    return { brg: bearingFromVec(dx, dz), rng: rng };
+  }
+  function updateUnitFacing(g) {
+    var faceCanvas = document.getElementById("uFaceCanvas");
+    var faceEl = document.getElementById("uFacing");
+    var tgtRow = document.getElementById("uTgtRow");
+    var tgtEl  = document.getElementById("uTgtBrg");
+    if (!g) return;
+    var fdeg = unitFacingDeg(g);
+    if (faceEl) faceEl.textContent = ("00" + Math.round(fdeg)).slice(-3) + "\u00B0 " + compass8(fdeg);
+    var ti = unitTargetInfo(g);
+    if (tgtRow) tgtRow.style.display = ti ? "block" : "none";
+    if (ti && tgtEl) tgtEl.textContent = bearingTxt(ti.brg) + ", " + (ti.rng/1000).toFixed(1) + "km";
+    // draw the dial: amber needle = facing; teal arrow = bearing to target (if any)
+    if (faceCanvas) {
+      drawCompassRose(faceCanvas, fdeg);
+      if (ti) {
+        // overlay a teal target-bearing tick on the same dial
+        var ctx = faceCanvas.getContext("2d");
+        var w = faceCanvas.width, h = faceCanvas.height, cx = w/2, cy = h/2, R = Math.min(cx,cy)-4;
+        var a = ti.brg * Math.PI/180;
+        var nx = cx + Math.sin(a)*(R-8), ny = cy - Math.cos(a)*(R-8);
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(nx, ny);
+        ctx.strokeStyle = "rgba(95,214,198,0.9)"; ctx.lineWidth = 1.8; ctx.stroke();
+        ctx.beginPath(); ctx.arc(nx, ny, 2.4, 0, Math.PI*2);
+        ctx.fillStyle = "rgba(95,214,198,0.95)"; ctx.fill();
+      }
+    }
   }
 
   // Build a muted canvas-texture sprite for a suburb name. Sprites always face the camera and
@@ -635,8 +1040,12 @@
   // Texture u maps to x (east), v maps to z (north). Vertex (x,z) has uv (x/(res-1), z/(res-1)).
   function buildTopoTexture(t, wlevel) {
     var res = t.res, H = t.heights, lo = t.min_m, hi = t.max_m, cell = t.cell_m;
-    // supersample the texture a bit above grid res for crisper contours
-    var TS = Math.min(2048, (res - 1) * 4);
+    // supersample the texture above grid res for crisp, clean topographic contours (item D).
+    // 513-res grid -> up to 4096px bake (8x grid) for thin, anti-aliased contour lines.
+    // ?tex=2048|3072|4096 overrides (lower = faster on weak GPUs / headless screenshots).
+    var texQS = parseInt(QS.get("tex"), 10);
+    var TSmax = (texQS === 2048 || texQS === 3072 || texQS === 4096) ? texQS : 4096;
+    var TS = Math.min(TSmax, (res - 1) * 8);
     var cv = document.createElement("canvas"); cv.width = cv.height = TS;
     var ctx = cv.getContext("2d");
     var img = ctx.createImageData(TS, TS);
@@ -651,7 +1060,12 @@
       var b = H[(z0+1)*res+x0]*(1-tx)+H[(z0+1)*res+x0+1]*tx;
       return a*(1-tz)+b*tz;
     }
-    var contourStep = 10; // metres between contour lines
+    var contourStep = 10;                       // metres between contour lines
+    var texelM = (res - 1) * cell / (TS - 1);   // ground metres per output texel
+    // line half-width in METRES of elevation, i.e. how close (in height) a texel must be to a
+    // contour multiple to be drawn. Using a CONSTANT screen-space width (gradient-normalised)
+    // gives uniformly thin, crisp lines instead of fat fuzzy bands on steep ground.
+    var lineTexels = 1.05;                       // ~1px thin contour at full bake
     for (var py = 0; py < TS; py++) {
       for (var px = 0; px < TS; px++) {
         var fx = px/(TS-1)*(res-1), fz = py/(TS-1)*(res-1);
@@ -672,17 +1086,25 @@
           var hz = Hat(fx,fz+e)-Hat(fx,fz-e);
           var nx=-hx, nz=-hz, ny=cell*2*e; var nl=Math.hypot(nx,ny,nz)||1;
           var shade = clamp((nx/nl*lx + ny/nl*ly + nz/nl*lz),0,1);
-          shade = 0.40 + 0.95*shade;   // stronger light/shadow spread
+          shade = 0.42 + 0.92*shade;   // light/shadow spread
           col=[col[0]*shade, col[1]*shade, col[2]*shade];
-          // contour lines: darken where height crosses a multiple of contourStep
+          // ---- CRISP CONTOURS ----
+          // distance (in metres of elevation) to the nearest contour multiple
           var band = Math.abs(((h % contourStep)+contourStep)%contourStep);
           var near = Math.min(band, contourStep-band);
-          // line thickness in metres scales with local slope so flats aren't over-drawn
-          var slopeM = Math.hypot(hx,hz)/(2*e*cell)+1e-3;
-          var lineW = clamp(0.55/Math.max(slopeM,0.02), 0.18, 1.1);
-          if (near < lineW) {
+          // local elevation change PER TEXEL = |grad| * texelM. Convert the desired pixel
+          // line-width into the equivalent elevation band so the line stays ~constant on screen.
+          var gradM = Math.hypot(hx, hz) / (2 * e * cell);     // rise/run (dimensionless)
+          var dHperTexel = gradM * texelM + 1e-4;              // metres of height per output texel
+          var halfBandM = lineTexels * dHperTexel * 0.5;
+          // anti-alias: smooth ramp across ~1 texel of the line edge
+          var aa = dHperTexel * 0.9;
+          var lineAmt = 1 - clamp((near - halfBandM) / Math.max(aa, 1e-4), 0, 1);
+          if (lineAmt > 0.01) {
             var major = Math.round(h/contourStep)%5===0;   // index line every 50 m
-            var f = major?0.40:0.66;
+            // darken toward a contour ink colour; major lines a touch darker/thicker
+            var ink = major ? 0.34 : 0.60;
+            var f = 1 - lineAmt * (1 - ink);
             col=[col[0]*f, col[1]*f, col[2]*f];
           }
         }
@@ -692,7 +1114,11 @@
     }
     ctx.putImageData(img,0,0);
     var tex=new THREE.CanvasTexture(cv);
-    tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping; tex.anisotropy=8; tex.needsUpdate=true;
+    tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping;
+    var maxAniso = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 8;
+    tex.anisotropy = Math.min(16, maxAniso || 8);
+    tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
+    tex.needsUpdate=true;
     return tex;
   }
   function mix255(a,b,t){return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
@@ -746,7 +1172,8 @@
     var d = u.userData;
     var sightM = d.rangeM > 0 ? Math.max(d.rangeM, 8000) : 12000;  // viewshed reach
     sightM *= fogFactor();                                          // fog cuts it
-    var ex = d.x, ez = d.z, ey = d.eye + 8;
+    var o = overlayOrigin(u);                                       // CURRENT or ARRIVAL origin
+    var ex = o.x, ez = o.z, ey = o.eye + 8;
     var rz = (map.size_m[1] / (res - 1));   // metres per grid row in z (north)
     // FOG OF WAR: areas the unit canNOT see are clearly SHADED OUT (dark/cold). Visible terrain
     // stays bright & natural with a faint warm lift. This is the inverse of a subtle highlight -
@@ -832,10 +1259,15 @@
   //             tall close mask still blocks it -> some dead space remains.
   //   MORTAR  : near-vertical plunge; only the launch corridor near the gun + the cell column
   //             matter, so almost nothing masks it -> dead space ~ 0 (only min/max range).
-  function canHit(ex, ez, ey, tx, tz, ty, res, H, cell, rz, v, p) {
+  function canHit(ex, ez, ey, tx, tz, ty, res, H, cell, rz, v, p, maxRangeM) {
     var dx = tx - ex, dz = tz - ez;
     var horiz = Math.hypot(dx, dz);
     if (horiz < cell) return true;
+
+    // HARD MAX-RANGE CAP (item C4): no trajectory — direct, oblique or mortar — can reach
+    // beyond the gun's max range. Indirect fire only changes the ARC to clear terrain WITHIN
+    // range; it never increases the maximum distance. A target beyond range is simply unreachable.
+    if (maxRangeM != null && horiz > maxRangeM) return false;
 
     if (!p.high) {
       // DIRECT: straight line of sight from muzzle to target top.
@@ -890,7 +1322,7 @@
           r = 0.30; gg = 0.33; bb = 0.36;
         } else {
           inRange++;
-          var ok = canHit(ex, ez, ey, wx, wz, H[idx] + 1, res, H, cell, rz, v, p);
+          var ok = canHit(ex, ez, ey, wx, wz, H[idx] + 1, res, H, cell, rz, v, p, (d.rangeM > 0 ? d.rangeM : 14000));
           if (ok) {
             hit++;
             // hittable: cool muted GREEN, brighter when nearer (better accuracy/cert.)
@@ -925,7 +1357,8 @@
     var p = trajParams("direct");                       // always flat fire for the picture
     var maxR = (d.rangeM > 0 ? d.rangeM : 14000) * p.reachMul * fogFactor();
     var v = muzzleSpeed(d.rangeM > 0 ? d.rangeM : 14000);
-    var ex = d.x, ez = d.z, ey = d.eye + 8;
+    var o = overlayOrigin(u);                            // CURRENT or ARRIVAL origin
+    var ex = o.x, ez = o.z, ey = o.eye + 8;
     var rz = (map.size_m[1] / (res - 1));
 
     var inRange = 0, hit = 0;
@@ -940,7 +1373,7 @@
           r = 0.30; gg = 0.33; bb = 0.37;
         } else {
           inRange++;
-          var ok = canHit(ex, ez, ey, wx, wz, H[idx] + 1, res, H, cell, rz, v, p);
+          var ok = canHit(ex, ez, ey, wx, wz, H[idx] + 1, res, H, cell, rz, v, p, (d.rangeM > 0 ? d.rangeM : 14000));
           if (ok) {
             hit++;
             // HITTABLE: subtle clear GREEN, brighter nearer the gun
@@ -974,6 +1407,117 @@
     var el = document.getElementById("uDeadPct");
     el.textContent = dp + "%";
     document.getElementById("uDeadBar").style.width = dp + "%";
+  }
+
+  // ---------- PREVIEW POSITION (CURRENT vs ARRIVAL) ----------
+  // Returns the {x, z, eye} the overlays should be computed FROM for a unit. In ARRIVAL mode we
+  // use the unit's current MOVE-flag DESTINATION (last flag) + its eye height there, so the
+  // player can preview what it'll see / hit on arrival (item F11). CURRENT = where it stands now.
+  function overlayOrigin(u) {
+    var d = u.userData;
+    if (previewMode === "arrival" && d.cmd && d.cmd.flags && d.cmd.flags.length) {
+      var f = d.cmd.flags[d.cmd.flags.length - 1].userData;
+      var ax = clamp(f.fx, 0, map.size_m[0]), az = clamp(f.fz, 0, map.size_m[1]);
+      var ay = heightAt(ax, az) + (d._eyeOff || 8);
+      return { x: ax, z: az, eye: ay, arrival: true };
+    }
+    return { x: d.x, z: d.z, eye: d.eye, arrival: false };
+  }
+
+  // ---------- SHADE OUT OF RANGE (item F10) ----------
+  // For the selected unit, HEAVILY dim everything OUTSIDE its gun range so the in-range area
+  // stands out. Combined with dead-zones: in-range + hittable = green, in-range + masked = red,
+  // out-of-range = heavy dim. Honours the CURRENT/ARRIVAL preview origin.
+  function computeShadeOutOfRange(u) {
+    var t = map.terrain, res = t.res, H = t.heights, cell = t.cell_m;
+    var colors = terrainMesh.geometry.attributes.color;
+    var d = u.userData;
+    if (!(d.rangeM > 0)) { if (show.los) computeViewshed(u); else clearViewshed(); return; }
+    var p = trajParams("direct");
+    var o = overlayOrigin(u);
+    var maxR = d.rangeM * fogFactor();
+    var v = muzzleSpeed(d.rangeM);
+    var ex = o.x, ez = o.z, ey = o.eye + 8;
+    var rz = (map.size_m[1] / (res - 1));
+    var inRange = 0, hit = 0;
+    for (var zi = 0; zi < res; zi++) {
+      for (var xi = 0; xi < res; xi++) {
+        var idx = zi * res + xi;
+        var wx = xi * cell, wz = zi * rz;
+        var dist = Math.hypot(wx - ex, wz - ez);
+        var r, gg, bb;
+        if (dist > maxR) {
+          // OUT OF RANGE: heavy shade-out (dark, cold) so the in-range area pops
+          r = 0.16; gg = 0.18; bb = 0.21;
+        } else {
+          inRange++;
+          var ok = canHit(ex, ez, ey, wx, wz, H[idx] + 1, res, H, cell, rz, v, p, d.rangeM);
+          if (ok) {
+            hit++;
+            var near = clamp(1 - dist / maxR, 0, 1);
+            r = 0.42 + near * 0.16; gg = 0.76 + near * 0.30; bb = 0.48 + near * 0.12;
+          } else {
+            r = 1.05; gg = 0.34; bb = 0.30;     // in-range but masked = dead zone red
+          }
+        }
+        colors.setXYZ(idx, r, gg, bb);
+      }
+    }
+    colors.needsUpdate = true;
+    var deadPct = inRange > 0 ? Math.round((1 - hit / inRange) * 100) : 0;
+    lastDeadStats = { deadPct: deadPct, inRange: inRange, hit: hit, maxR: maxR };
+  }
+
+  // ---------- NET LINE OF SIGHT (collective, item F12) ----------
+  // Shade terrain by the COMBINED LOS of ALL friendly units ON THE COMMS NET: a cell is SEEN if
+  // ANY on-net friendly has clear LOS to it within its sight range. The shared force fog-of-war —
+  // distinct from a single unit's viewshed. Off-net friendlies don't contribute (no shared intel).
+  function computeNetLos() {
+    var t = map.terrain, res = t.res, H = t.heights, cell = t.cell_m;
+    var colors = terrainMesh.geometry.attributes.color;
+    var rz = (map.size_m[1] / (res - 1));
+    // gather on-net friendlies (fall back to ALL alive friendlies if comms overlay isn't computing)
+    var friends = units.filter(function (g) {
+      return g.userData.side === "friend" && !(g.userData.cmd && g.userData.cmd.ko);
+    });
+    var contributors = friends.filter(function (g) {
+      return (g.userData._onNet === undefined) ? true : !!g.userData._onNet;
+    });
+    if (!contributors.length) contributors = friends;
+    // precompute each contributor's eye + sight reach (use ARRIVAL origin if previewing)
+    var srcs = contributors.map(function (g) {
+      var o = overlayOrigin(g);
+      var d = g.userData;
+      var sightM = (d.rangeM > 0 ? Math.max(d.rangeM, 6000) : 9000) * fogFactor();
+      return { x: o.x, z: o.z, eye: o.eye + 8, sight: sightM };
+    });
+    for (var zi = 0; zi < res; zi++) {
+      for (var xi = 0; xi < res; xi++) {
+        var idx = zi * res + xi;
+        var wx = xi * cell, wz = zi * rz, wy = H[idx] + 1;
+        var seen = false, bestNear = 0;
+        for (var s = 0; s < srcs.length; s++) {
+          var sc = srcs[s];
+          var dist = Math.hypot(wx - sc.x, wz - sc.z);
+          if (dist > sc.sight) continue;
+          if (losGrid(sc.x, sc.z, sc.eye, wx, wz, wy, res, H, cell, rz)) {
+            seen = true;
+            var near = clamp(1 - dist / sc.sight, 0, 1);
+            if (near > bestNear) bestNear = near;
+          }
+        }
+        var r, gg, bb;
+        if (seen) {
+          // SEEN by the force: bright, faint teal lift (shared intel)
+          r = 0.92 + bestNear * 0.22; gg = 1.02 + bestNear * 0.26; bb = 0.96 + bestNear * 0.18;
+        } else {
+          // UNSEEN: shared fog — strongly shaded out / cold
+          r = 0.24; gg = 0.27; bb = 0.33;
+        }
+        colors.setXYZ(idx, r, gg, bb);
+      }
+    }
+    colors.needsUpdate = true;
   }
 
   // min/max range rings + (optional) immunity-zone band vs a reference enemy gun.
@@ -1143,10 +1687,10 @@
     //   2 STEEP   : orange                     (very slow)
     //   3 CLIFF   : red                        (impassable)
     var BIN = [
-      [0.82, 1.02, 0.86],   // gentle  - desaturated green wash
-      [1.30, 1.05, 0.42],   // moderate- amber
-      [1.45, 0.78, 0.34],   // steep   - orange
-      [1.55, 0.36, 0.30],   // cliff   - red
+      [0.80, 1.02, 0.86],   // gentle  - desaturated green wash
+      [1.28, 1.06, 0.40],   // moderate- amber
+      [1.50, 0.66, 0.26],   // steep   - strong orange
+      [2.10, 0.16, 0.14],   // cliff   - BRIGHT saturated red (impassable, item D6)
     ];
     for (var zi = 0; zi < res; zi++) {
       for (var xi = 0; xi < res; xi++) {
@@ -1155,10 +1699,15 @@
         var g = gradientAt(H, res, xi, zi, cell, rz);
         var b = slopeBin(g);
         var c = BIN[b];
-        // within steep/cliff bins, brighten a touch with severity so ridgelines pop
-        if (b >= 2) {
-          var sev = clamp((g - SLOPE_T.steep) / (SLOPE_T.cliff - SLOPE_T.steep), 0, 1.4);
-          colors.setXYZ(idx, c[0] + sev * 0.10, c[1], c[2]);
+        if (b === 3) {
+          // CLIFF / IMPASSABLE: blazing red with a diagonal HATCH so it reads instantly as
+          // "you cannot go here" — brighter on hatch stripes, distinctly different from steep.
+          var hatch = ((xi + zi) % 4 < 2) ? 1.0 : 0.62;
+          colors.setXYZ(idx, c[0] * hatch, c[1] * hatch, c[2] * hatch);
+        } else if (b === 2) {
+          // STEEP: orange, brighten a touch with severity so ridgelines pop (but clearly < cliff)
+          var sev = clamp((g - SLOPE_T.steep) / (SLOPE_T.cliff - SLOPE_T.steep), 0, 1);
+          colors.setXYZ(idx, c[0] + sev * 0.12, c[1], c[2]);
         } else {
           colors.setXYZ(idx, c[0], c[1], c[2]);
         }
@@ -1193,12 +1742,18 @@
   function placeDemoUnits() {
     unitsGroup = new THREE.Group(); scene.add(unitsGroup);
     var W = map.size_m[0], L = map.size_m[1];
-    // artillery scale: late-game guns reach ~30km. Units spread across the large theatre.
-    addUnit("ANZAC-01", "friend", "Line", "BR-155 (18km)", 18000, W * 0.40, L * 0.30, "Hoplite-class. Holding the ridge line. COMMAND NODE.");
-    addUnit("ANZAC-02", "friend", "Siege", "SG-305 (30km)", 30000, W * 0.52, L * 0.22, "Leviathan dreadnought-crab. 305mm siege gun.");
-    addUnit("ANZAC-03", "friend", "Recon", "SR-90 (9km)", 9000, W * 0.66, L * 0.40, "Forward scout-crab. Relays the net across the harbour.");
-    addUnit("ANZAC-04", "friend", "Line", "BR-120 (12km)", 12000, W * 0.78, L * 0.78, "Flanking element - pushing into the far valley.");
-    addUnit("CONTACT-7", "hostile", "Line", "? (unidentified)", 16000, W * 0.60, L * 0.66, "IDENT UNCERTAIN - too far to confirm class.");
+    // Gun ranges are PER-GUN and tuned to be meaningful on this ~11km theatre: a small recon
+    // gun (76mm) reaches only a few km, a line gun (120/155mm) a fair chunk, the 305mm siege gun
+    // dominates much of the map. They must NOT all blanket the whole map (item C).
+    //   SR-76  76mm  ~2.8km   (recon, short)
+    //   BR-120 120mm ~5.0km   (line)
+    //   BR-155 155mm ~6.5km   (line, command)
+    //   SG-305 305mm ~9.5km   (siege, dominates)
+    addUnit("ANZAC-01", "friend", "Line",  "BR-155", 6500, W * 0.40, L * 0.30, "Hoplite-class. Holding the ridge line. COMMAND NODE.");
+    addUnit("ANZAC-02", "friend", "Siege", "SG-305", 9500, W * 0.52, L * 0.22, "Leviathan dreadnought-crab. 305mm siege gun — dominates the theatre.");
+    addUnit("ANZAC-03", "friend", "Recon", "SR-76",  2800, W * 0.66, L * 0.40, "Forward scout-crab. Light 76mm — short reach, relays the net.");
+    addUnit("ANZAC-04", "friend", "Line",  "BR-120", 5000, W * 0.78, L * 0.78, "Flanking element - pushing into the far valley.");
+    addUnit("CONTACT-7", "hostile", "Line", "?-130 (unidentified)", 5500, W * 0.60, L * 0.66, "IDENT UNCERTAIN - too far to confirm class.");
     addUnit("SCAV-NEUTRAL", "civ", "Recon", "unarmed", 0, W * 0.34, L * 0.55, "Civilian scavenger crab. Do not engage.");
   }
   function addUnit(name, side, cls, gun, rangeM, x, z, note) {
@@ -1357,7 +1912,16 @@
     }
     var d = u.userData;
 
-    // SLOPE / trafficability overlay takes priority over the analysis shaders when on.
+    // =========================================================================
+    // TERRAIN OVERLAY PRIORITY (item F12) — only ONE shader colours the terrain at a time.
+    // Highest priority first:
+    //   1. SLOPE / gradient            (trafficability — where you can/can't go)
+    //   2. FIRE ANALYSIS               (trajectory-aware can-hit / dead-space)
+    //   3. DEAD ZONES / SHADE-RANGE    (selected unit's fire picture + out-of-range shade)
+    //   4. NET LINE OF SIGHT           (collective on-net fog-of-war)
+    //   5. ARRIVAL PREVIEW + single-unit VIEWSHED (what THIS unit sees, current or on arrival)
+    // (ARRIVAL is not its own shader — it changes the ORIGIN used by 3/4/5 via overlayOrigin().)
+    // =========================================================================
     if (show.slope) {
       if (fireGroup) { scene.remove(fireGroup); fireGroup = null; }
       computeSlopeOverlay();
@@ -1367,6 +1931,12 @@
       computeFireAnalysis(u);
       buildFireRings(u);
       updateFireReadout(u);
+    } else if (show.shaderange) {
+      // SHADE OUT OF RANGE: heavy-dim everything outside the selected unit's gun range.
+      if (fireGroup) { scene.remove(fireGroup); fireGroup = null; }
+      updateFireReadout(null);
+      computeShadeOutOfRange(u);
+      updateDeadReadout(u);
     } else if (show.deadzones) {
       // FIRE PICTURE: shade the SELECTED unit's direct-fire dead zones (red) vs hittable (green).
       if (fireGroup) { scene.remove(fireGroup); fireGroup = null; }
@@ -1374,9 +1944,15 @@
       if (u.userData.rangeM > 0) computeDeadZones(u);
       else if (show.los) computeViewshed(u); else clearViewshed();   // unarmed unit: fall back to viewshed
       updateDeadReadout(u);
+    } else if (show.netlos) {
+      // NET LINE OF SIGHT: collective on-net fog-of-war (combined LOS of all on-net friendlies).
+      if (fireGroup) { scene.remove(fireGroup); fireGroup = null; }
+      updateFireReadout(null);
+      computeNetLos();
+      updateDeadReadout(u);
     } else {
       if (fireGroup) { scene.remove(fireGroup); fireGroup = null; }
-      // VIEWSHED light-cast: highlight everything this unit can see.
+      // VIEWSHED light-cast: highlight everything this unit can see (current or arrival origin).
       if (show.los) computeViewshed(u); else clearViewshed();
       updateDeadReadout(u);
     }
@@ -1720,6 +2296,53 @@
     }
   }
 
+  // Infer calibre (mm) from a gun designation. Game gun names embed the calibre as the
+  // trailing number group, e.g. "BR-155" -> 155, "SG-305" -> 305, "SR-90" -> 90, "BR-120" -> 120.
+  // Returns null if no plausible calibre can be read (e.g. "unarmed", "light", "?").
+  function parseCalibre(gun) {
+    if (!gun) return null;
+    var m = String(gun).match(/(\d{2,3})\s*mm/i);   // explicit "155mm"
+    if (m) return parseInt(m[1], 10);
+    m = String(gun).match(/[A-Z]{1,3}-?(\d{2,3})/);  // designation like BR-155 / SG305
+    if (m) { var c = parseInt(m[1], 10); if (c >= 40 && c <= 460) return c; }
+    return null;
+  }
+
+  // ARMAMENT readout (item B): list the unit's fitted gun(s) — name, calibre, MAX RANGE in km.
+  // Demo units carry a single .gun string + .rangeM; a unit may declare extra mounts via
+  // userData.guns = [{name, rangeM}]. We render each as a bordered "gunrow".
+  function renderArmament(d) {
+    var box = document.getElementById("uArm"); if (!box) return;
+    box.innerHTML = "";
+    var mounts = [];
+    if (Array.isArray(d.guns) && d.guns.length) {
+      d.guns.forEach(function (gm) { mounts.push({ name: gm.name, rangeM: gm.rangeM }); });
+    } else if (d.rangeM > 0) {
+      // strip a trailing "(18km)" range tag from the display gun name for the readout
+      var nm = String(d.gun || "GUN").replace(/\s*\([^)]*\)\s*$/, "").trim() || "MAIN GUN";
+      mounts.push({ name: nm, rangeM: d.rangeM });
+    }
+    if (!mounts.length) {
+      box.innerHTML = '<div class="none">UNARMED &middot; do not engage</div>';
+      return;
+    }
+    mounts.forEach(function (gm) {
+      var cal = parseCalibre(gm.name);
+      var row = document.createElement("div");
+      row.className = "gunrow";
+      var km = (gm.rangeM / 1000).toFixed(gm.rangeM >= 10000 ? 0 : 1);
+      row.innerHTML = '<span class="gn">' + escapeHtml(gm.name) + '</span>' +
+        (cal ? '<span class="cal">' + cal + 'mm</span>' : '') +
+        '<span class="rng">' + km + ' km</span>';
+      box.appendChild(row);
+    });
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
   function selectUnit(g) {
     selected = g; var d = g.userData;
     var p = document.getElementById("unit"); p.style.display = "block";
@@ -1729,9 +2352,10 @@
     var ie = document.getElementById("uIdent"); ie.textContent = ident;
     ie.className = d.side === "hostile" ? "warn" : "k";
     document.getElementById("uStruct").style.width = (d.cmd ? Math.round(d.cmd.struct) : 100) + "%";
-    document.getElementById("uGun").textContent = d.gun;
+    renderArmament(d);
     document.getElementById("uRange").textContent = d.rangeM ? (d.rangeM / 1000).toFixed(1) + " km" : "n/a";
     document.getElementById("uNote").textContent = d.note;
+    updateUnitFacing(g);
     rebuildOverlays();
     refreshCommsLine(g);
     if (typeof syncCommandPanel === "function") syncCommandPanel();
@@ -1771,19 +2395,31 @@
     camera.near = span * 0.001; camera.far = span * 6; camera.updateProjectionMatrix();
     controls.target.set(W / 2, 0, L / 2);
     // steeper tactical overhead so topography + viewshed read clearly
-    camera.position.set(W / 2, span * 1.05, L / 2 + span * 0.55);
+    camera.position.set(W / 2, span * 1.14, L / 2 + span * 0.74);
     controls.update();
   }
 
   // ---------- UI ----------
   var deadSync = function () {};   // set in bindUI; lets fire/slope toggles refresh DEAD ZONES btn
   function bindUI() {
-    tog("tLOS", "los"); tog("tRange", "range"); tog("tBld", "bld"); tog("tWire", "wire");
+    tog("tLOS", "los"); tog("tRange", "range"); tog("tBld", "bld"); tog("tRoads", "roads"); tog("tWire", "wire");
+    document.getElementById("tRoads").classList.toggle("on", show.roads);
     tog("tWind", "wind"); tog("tRain", "rain");
     tog("tSub", "suburbs"); tog("tFogCull", "fogcull");
     document.getElementById("tSub").classList.toggle("on", show.suburbs);
     document.getElementById("tFogCull").classList.toggle("on", show.fogcull);
     document.getElementById("tFly").onclick = function () { setFly(!fly.on); };
+
+    // ---- SUBURB NAMES toggle (big floating name labels; separate from the neon markers) ----
+    var subNamesBtn = document.getElementById("tSubNames");
+    if (subNamesBtn) {
+      subNamesBtn.classList.toggle("on", show.subnames);
+      subNamesBtn.onclick = function () {
+        show.subnames = !show.subnames;
+        subNamesBtn.classList.toggle("on", show.subnames);
+        if (suburbNameGroup) suburbNameGroup.visible = show.suburbs && show.subnames;
+      };
+    }
 
     // ---- COMMS NET toggle (its own overlay; coexists with gun range + units) ----
     function syncCommsUI() {
@@ -1810,6 +2446,8 @@
       if (show.deadzones) {
         // the dead-zone picture replaces the plain viewshed + competing shaders
         show.fire = false; show.slope = false; show.los = false;
+        show.shaderange = false; show.netlos = false;
+        syncShadeNet();
         document.getElementById("fire").style.display = "none";
         syncFireUI(); syncSlopeUI();
       } else {
@@ -1834,14 +2472,14 @@
     }
     document.getElementById("tFire").onclick = function () {
       show.fire = !show.fire;
-      if (show.fire) { show.los = false; show.slope = false; show.deadzones = false; syncSlopeUI(); deadSync(); }  // fire shading replaces viewshed/slope/deadzones
+      if (show.fire) { show.los = false; show.slope = false; show.deadzones = false; show.shaderange = false; show.netlos = false; syncSlopeUI(); deadSync(); syncShadeNet(); }  // fire shading replaces viewshed/slope/deadzones/shade/net
       else { show.los = true; }
       document.getElementById("fire").style.display = show.fire ? "block" : "none";
       syncFireUI(); rebuildOverlays();
     };
     function setTraj(m) {
       fireMode = m;
-      if (!show.fire) { show.fire = true; show.los = false; show.slope = false; show.deadzones = false; syncSlopeUI(); deadSync(); document.getElementById("fire").style.display = "block"; }
+      if (!show.fire) { show.fire = true; show.los = false; show.slope = false; show.deadzones = false; show.shaderange = false; show.netlos = false; syncSlopeUI(); deadSync(); syncShadeNet(); document.getElementById("fire").style.display = "block"; }
       syncFireUI(); rebuildOverlays();
     }
     document.getElementById("fDirect").onclick  = function () { setTraj("direct"); };
@@ -1859,6 +2497,7 @@
       if (show.slope) {
         // turning slope on shuts down the competing terrain shaders
         show.fire = false; show.los = false; show.deadzones = false;
+        show.shaderange = false; show.netlos = false; syncShadeNet();
         document.getElementById("fire").style.display = "none";
       } else {
         show.los = true;                       // restore the default viewshed
@@ -1866,6 +2505,55 @@
       syncSlopeUI(); syncFireUI(); deadSync(); rebuildOverlays();
     };
     syncSlopeUI();
+
+    // ---- SHADE OUT OF RANGE + NET LINE OF SIGHT toggles (item F10/F12) ----
+    // Both are exclusive terrain shaders. We clear the competing shaders when turning one on.
+    function clearOtherShaders() {
+      show.fire = false; show.slope = false; show.deadzones = false;
+      document.getElementById("fire").style.display = "none";
+      syncFireUI(); syncSlopeUI(); deadSync();
+    }
+    function syncShadeRangeUI() {
+      var b = document.getElementById("tShadeRange");
+      if (b) b.classList.toggle("on", show.shaderange);
+    }
+    function syncNetLosUI() {
+      var b = document.getElementById("tNetLos");
+      if (b) b.classList.toggle("on", show.netlos);
+    }
+    function syncShadeNet() { syncShadeRangeUI(); syncNetLosUI(); }
+    var shadeBtn = document.getElementById("tShadeRange");
+    if (shadeBtn) shadeBtn.onclick = function () {
+      show.shaderange = !show.shaderange;
+      if (show.shaderange) { show.netlos = false; show.los = false; clearOtherShaders(); }
+      else { show.los = true; }
+      syncShadeRangeUI(); syncNetLosUI(); rebuildOverlays();
+    };
+    var netLosBtn = document.getElementById("tNetLos");
+    if (netLosBtn) netLosBtn.onclick = function () {
+      show.netlos = !show.netlos;
+      if (show.netlos) {
+        show.shaderange = false; show.los = false; clearOtherShaders();
+        // net-LOS needs the comms net computed to know who's on net; enable it
+        if (!show.comms) { show.comms = true;
+          document.getElementById("tComms").classList.toggle("on", true);
+          document.getElementById("commsLeg").style.display = "block"; }
+      } else { show.los = true; }
+      syncNetLosUI(); syncShadeRangeUI(); rebuildOverlays();
+    };
+    syncShadeRangeUI(); syncNetLosUI();
+
+    // ---- PREVIEW: FROM CURRENT / FROM ARRIVAL (item F11) ----
+    function syncPrevUI() {
+      var c = document.getElementById("tPrevCur"), a = document.getElementById("tPrevArr");
+      if (c) c.classList.toggle("on", previewMode === "current");
+      if (a) a.classList.toggle("on", previewMode === "arrival");
+    }
+    var prevCur = document.getElementById("tPrevCur"), prevArr = document.getElementById("tPrevArr");
+    if (prevCur) prevCur.onclick = function () { previewMode = "current"; syncPrevUI(); rebuildOverlays(); };
+    if (prevArr) prevArr.onclick = function () { previewMode = "arrival"; syncPrevUI(); rebuildOverlays(); };
+    syncPrevUI();
+
     var vS = document.getElementById("vShaded"), vE = document.getElementById("vElev");
     vS.classList.toggle("on", viewMode === "shaded"); vE.classList.toggle("on", viewMode === "elevation");
     vS.onclick = function () { viewMode = "shaded"; vS.classList.add("on"); vE.classList.remove("on"); recolorTerrain(); };
@@ -1878,10 +2566,14 @@
       el.onclick = function () {
         show[key] = !show[key]; el.classList.toggle("on", show[key]);
         if (key === "bld" && buildingsGroup) { buildingsGroup.visible = show.bld; applyFogCull(); }
+        else if (key === "roads" && roadsGroup) roadsGroup.visible = show.roads;
         else if (key === "wire" && wireMesh) wireMesh.visible = show.wire;
         else if (key === "wind" && windGroup) windGroup.visible = show.wind;
         else if (key === "rain" && rainGroup) rainGroup.visible = show.rain;
-        else if (key === "suburbs" && suburbGroup) suburbGroup.visible = show.suburbs;
+        else if (key === "suburbs") {
+          if (suburbGroup) suburbGroup.visible = show.suburbs;
+          if (suburbNameGroup) suburbNameGroup.visible = show.suburbs && show.subnames;
+        }
         else if (key === "fogcull") applyFogCull();
         else rebuildOverlays();
       };
@@ -1922,6 +2614,30 @@
     };
     // expose for keyboard
     cmd._setFlagType = setFlagType;
+
+    // ---- SPEED control (1x/2x/3x/4x) + SOUND toggle (item G13/G16) ----
+    ["spd1","spd2","spd3","spd4"].forEach(function (id) {
+      var b = document.getElementById(id); if (!b) return;
+      b.classList.toggle("on", parseInt(b.getAttribute("data-s"), 10) === simSpeed);
+      b.onclick = function () {
+        simSpeed = parseInt(b.getAttribute("data-s"), 10);
+        ["spd1","spd2","spd3","spd4"].forEach(function (i2) {
+          var e2 = document.getElementById(i2);
+          if (e2) e2.classList.toggle("on", parseInt(e2.getAttribute("data-s"), 10) === simSpeed);
+        });
+        document.getElementById("status").textContent = "SIM SPEED " + simSpeed + "x";
+      };
+    });
+    var sb = document.getElementById("tSound");
+    if (sb) {
+      sb.classList.toggle("on", soundOn);
+      sb.onclick = function () {
+        soundOn = !soundOn;
+        sb.classList.toggle("on", soundOn);
+        if (soundOn) { try { if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); if (audioCtx.state==="suspended") audioCtx.resume(); playSfx("impact"); } catch(e){} }
+        document.getElementById("status").textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+      };
+    }
   }
   function dolly(f) {
     var dir = new THREE.Vector3().subVectors(camera.position, controls.target);
@@ -2005,9 +2721,10 @@
       fly.pitch = Math.asin(clamp(dir.y, -1, 1));
       fly.yaw = Math.atan2(dir.x, dir.z);
       fly.keys = {};
-      // speed scales with map size: cross ~11km in ~12s at base, ~3s on shift-boost
+      // speed scales with map size: controllable cruise (~cross 11km in ~20s at base),
+      // ~7s on shift-boost. Tuned down from earlier so the fly cam is easy to drive (item A).
       var span = map ? Math.max(map.size_m[0], map.size_m[1]) : 11000;
-      fly.speed = span * 0.09;     // units/sec
+      fly.speed = span * 0.052;    // units/sec
       fly.clock.getDelta();        // reset dt so first frame isn't a huge jump
     } else {
       controls.enabled = true;
@@ -2037,7 +2754,7 @@
     if (k.a) move.sub(right);
     if (k.r || k.e) move.add(up);     // up
     if (k.q) move.sub(up);            // down  (F is reserved as the fly-mode toggle)
-    var spd = fly.speed * (k.shift ? 4.0 : 1.0);
+    var spd = fly.speed * (k.shift ? 3.2 : 1.0);
     if (move.lengthSq() > 0) {
       move.normalize().multiplyScalar(spd * dt);
       camera.position.add(move);
@@ -2056,10 +2773,12 @@
   // existing overlays keep working. The sim loop only runs when cmd.playing is true.
   // ===========================================================================
 
-  // class -> ground speed (m/s, scaled so movement is watchable on an 11km map).
+  // class -> ground speed (m/s). MUCH SLOWER by default (item G13) so the battle plays at a
+  // satisfying, watchable pace — a Line crab crossing ~11km now takes minutes at 1x, not seconds.
+  // The SPEED control (1x/2x/3x/4x) multiplies this via simSpeed in stepCommandSim.
   function classSpeed(cls) {
-    return cls === "Recon" ? 230 : cls === "Line" ? 160 : cls === "Siege" ? 95 :
-           cls === "Convoy" ? 70 : 175;
+    return cls === "Recon" ? 42 : cls === "Line" ? 30 : cls === "Siege" ? 18 :
+           cls === "Convoy" ? 13 : 32;
   }
 
   // Per-unit command state. Called once after units are placed.
@@ -2080,12 +2799,17 @@
   function setCommandMode(on) {
     cmd.on = on;
     var p = document.getElementById("cmd");      if (p) p.style.display = on ? "block" : "none";
-    var h = document.getElementById("cmdHint");  if (h) h.style.display = on ? "block" : "none";
+    // cmdHint duplicates the C&C panel + bottom controls and crowds the unit panel — keep hidden.
+    var h = document.getElementById("cmdHint");  if (h) h.style.display = "none";
     var s = document.getElementById("scenSel");  if (s) s.style.display = on ? "block" : "none";
     var b = document.getElementById("tCmd");     if (b) b.classList.toggle("on", on);
     if (cmd.flagGroup)  cmd.flagGroup.visible  = on;
     if (cmd.orderGroup) cmd.orderGroup.visible  = on;
     if (cmd.fxGroup)    cmd.fxGroup.visible     = on;
+    var cl = document.getElementById("clog");   if (cl) cl.style.display = on ? "block" : "none";
+    var sc = document.getElementById("simctl"); if (sc) sc.style.display = on ? "flex" : "none";
+    var hn = document.querySelector(".hint");   if (hn) hn.style.display = on ? "none" : "block";
+    if (on && !clogLines.length) combatLog('<span class="dim">— command net online —</span>');
     if (!on) { setPlaying(false); }
     syncCommandPanel();
   }
@@ -2165,10 +2889,13 @@
     drawOrderLines(g);
   }
 
-  // Redraw the order/path lines for ALL friendly units (cheap; few units).
+  // Redraw the order/path lines for ALL friendly units (cheap; few units). Brighter/thicker
+  // dashed TEAL line from each unit to its flag, with a SMALL label naming the owning unit at
+  // the destination flag (item G15).
   function drawOrderLines(_changed) {
     if (!cmd.orderGroup) return;
     while (cmd.orderGroup.children.length) cmd.orderGroup.remove(cmd.orderGroup.children[0]);
+    var span = Math.max(map.size_m[0], map.size_m[1]);
     units.forEach(function (g) {
       var d = g.userData, c = d.cmd;
       if (!c || !c.flags.length || c.ko) return;
@@ -2180,11 +2907,22 @@
         pts.push(new THREE.Vector3(f.fx, heightAt(clamp(f.fx,0,map.size_m[0]), clamp(f.fz,0,map.size_m[1])) + 18, f.fz));
       }
       if (pts.length < 2) return;
-      var geo = new THREE.BufferGeometry().setFromPoints(pts);
-      var mat = new THREE.LineDashedMaterial({ color: col, transparent: true, opacity: 0.9,
-        dashSize: 80, gapSize: 50, depthTest: false });
-      var ln = new THREE.Line(geo, mat); ln.computeLineDistances(); ln.renderOrder = 14;
-      cmd.orderGroup.add(ln);
+      // thicker brighter dashed line: stack two slightly-offset dashed lines for a bold band
+      for (var s = 0; s < 2; s++) {
+        var p2 = s === 0 ? pts : pts.map(function (p) { return new THREE.Vector3(p.x, p.y + span * 0.0016, p.z); });
+        var geo = new THREE.BufferGeometry().setFromPoints(p2);
+        var mat = new THREE.LineDashedMaterial({ color: col, transparent: true, opacity: s === 0 ? 0.98 : 0.55,
+          dashSize: 110, gapSize: 55, depthTest: false });
+        var ln = new THREE.Line(geo, mat); ln.computeLineDistances(); ln.renderOrder = 14 + s;
+        cmd.orderGroup.add(ln);
+      }
+      // small unit-name label at the destination flag
+      var dest = c.flags[c.flags.length - 1].userData;
+      var lblPt = new THREE.Vector3(dest.fx, heightAt(clamp(dest.fx,0,map.size_m[0]), clamp(dest.fz,0,map.size_m[1])) + span * 0.020, dest.fz);
+      var tag = makeTagSprite(d.name, col, span);
+      tag.position.copy(lblPt); tag.material.depthTest = false; tag.renderOrder = 24;
+      tag.scale.multiplyScalar(0.7);
+      cmd.orderGroup.add(tag);
     });
   }
 
@@ -2248,7 +2986,7 @@
   var ARRIVE_M = 50;
   function stepCommandSim(dt) {
     if (!cmd.on || !cmd.playing) return;
-    dt = Math.min(dt, 0.1);
+    dt = Math.min(dt, 0.1) * simSpeed;   // SPEED control scales movement + combat rate (item G13)
     var moved = false;
     units.forEach(function (g) {
       var d = g.userData, c = d.cmd;
@@ -2276,6 +3014,7 @@
       // --- ENGAGEMENT ---
       stepEngage(g, dt);
     });
+    if (cmd._warmup) return;   // fast-forward: skip per-step redraws/overlays/fx
     if (moved) { drawOrderLines(); }
     // keep the selected unit's overlays roughly current without thrashing every frame
     cmd._ovTimer = (cmd._ovTimer || 0) + dt;
@@ -2284,13 +3023,16 @@
     checkFlagshipNet();
   }
 
-  // Decide a unit's combat target and resolve damage over time.
+  // Decide a unit's combat target and resolve damage over time. Units FIRE WHILE MOVING
+  // (item G14): any armed unit with an enemy in range + LOS engages it, even en route to a flag.
+  // A HOLD order makes a unit hold fire (overwatch only fires if attacked); everything else fires
+  // reactively. dps is much lower now (item G13) so kills take a satisfying time.
   function stepEngage(g, dt) {
     var d = g.userData, c = d.cmd;
-    if (d.side === "civ" || d.rangeM <= 0) { c.firingTo = null; return; }
-    // attack flag => seek nearest enemy in range; else only engage if it's an enemy we already target
+    if (d.side === "civ" || d.rangeM <= 0) { stopFiring(g); return; }
+    // a pure HOLD posture holds fire unless already engaged this exchange
     var lastFlag = c.flags.length ? c.flags[c.targetIdx >= c.flags.length ? c.flags.length-1 : c.targetIdx].userData : null;
-    var wantsAttack = (lastFlag && lastFlag.type === "attack") || c.flags.some(function(f){return f.userData.type==="attack";});
+    var holdFire = (lastFlag && lastFlag.type === "hold") && !d._engageAll;
     // friendly engages hostiles; hostile engages friendlies (so the demo fights back)
     var enemySide = d.side === "friend" ? "hostile" : "friend";
     var target = null, bestD = Infinity;
@@ -2299,30 +3041,46 @@
       var ed = e.userData;
       if (ed.side !== enemySide || ed.cmd.ko) return;
       var dist = Math.hypot(ed.x - d.x, ed.z - d.z);
-      if (dist > d.rangeM) return;
+      if (dist > d.rangeM) return;                       // OUT OF RANGE: cannot engage (item C)
       if (!hasLOS(d.x, d.z, d.eye, ed.x, ed.z, ed.eye)) return;
       if (dist < bestD) { bestD = dist; target = e; }
     });
-    // friendlies only auto-fire when they have an ATTACK order (or are the flagship leading);
-    // hostiles always defend. This keeps MOVE orders peaceful until told to engage.
-    var mayFire = (d.side === "hostile") || wantsAttack || d._engageAll;
-    if (target && mayFire) {
+    if (target && !holdFire) {
+      var firstShot = (c.firingTo !== target);
       c.firingTo = target;
-      // hit model: per second, damage chance scales with closeness within range
-      var rangeFrac = bestD / d.rangeM;           // 0=point blank, 1=max range
-      var dps = (12 + 26 * (1 - rangeFrac));       // 12..38 struct/sec
+      // hit model: damage rate scales with closeness within range
+      var rangeFrac = bestD / d.rangeM;            // 0=point blank, 1=max range
+      var dps = (3.0 + 7.0 * (1 - rangeFrac));     // 3..10 struct/sec (slow, satisfying)
       var td = target.userData.cmd;
+      var before = td.struct;
       td.struct -= dps * dt;
+      // FIRE cadence: a discrete "shot" muzzle flash + boom + impact + log roughly every ~0.7s
+      c.fireTimer = (c.fireTimer || 0) + dt;
+      if (firstShot || c.fireTimer >= 0.7) {
+        c.fireTimer = 0;
+        if (!cmd._warmup) { spawnMuzzleFlash(d); spawnImpact(target.userData); playSfx("fire"); }
+        if (firstShot) {
+          combatLog('<span class="a">' + d.name + '</span> fires on <span class="h">' + target.userData.name + '</span>');
+        } else if (Math.floor(before / 20) !== Math.floor(td.struct / 20)) {
+          // log struct milestones (every 20%) as hits
+          combatLog('<span class="h">' + target.userData.name + '</span> hit &middot; struct ' + Math.max(0, Math.round(td.struct)) + '%', "hit");
+        }
+      }
       if (td.struct <= 0) { td.struct = 0; knockOut(target); }
       updateStructBar(target);
     } else {
-      c.firingTo = null;
+      stopFiring(g);
     }
+  }
+  function stopFiring(g) {
+    var c = g.userData.cmd; if (c) { c.firingTo = null; c.fireTimer = 0; }
   }
 
   function knockOut(g) {
     var c = g.userData.cmd; if (c.ko) return;
     c.ko = true; c.firingTo = null;
+    combatLog('<span class="h">' + g.userData.name + '</span> KNOCKED OUT', "ko");
+    if (!cmd._warmup) playSfx("impact");
     if (c.fireLine) { cmd.fxGroup.remove(c.fireLine); c.fireLine = null; }
     // grey the unit out
     g.traverse(function (o) {
@@ -2379,6 +3137,51 @@
         cmd.fxGroup.remove(c.fireLine); c.fireLine = null;
       }
     });
+  }
+
+  // ---- FIRE EFFECTS: muzzle flash + impact spark (item G16) --------------------
+  // Short-lived additive sprites in cmd.fxGroup. Each carries {born, life} in userData;
+  // updateFxSprites() fades + removes them. Cheap point-like flashes, Eva-warm.
+  var fxFlashTex = null, fxSparkTex = null;
+  function flashTexture(inner, outer) {
+    var S = 64, cv = document.createElement("canvas"); cv.width = cv.height = S;
+    var ctx = cv.getContext("2d");
+    var g = ctx.createRadialGradient(S/2, S/2, 0, S/2, S/2, S/2);
+    g.addColorStop(0, inner); g.addColorStop(0.4, outer); g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, S, S);
+    var tex = new THREE.CanvasTexture(cv); tex.needsUpdate = true; return tex;
+  }
+  function spawnFx(x, y, z, tex, size, life) {
+    if (!cmd.fxGroup) return;
+    var spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true,
+      depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 1 }));
+    spr.scale.set(size, size, 1); spr.position.set(x, y, z); spr.renderOrder = 30;
+    spr.userData = { born: performance.now(), life: life, size0: size };
+    cmd.fxGroup.add(spr);
+  }
+  function spawnMuzzleFlash(d) {
+    if (!fxFlashTex) fxFlashTex = flashTexture("rgba(255,236,170,1)", "rgba(255,150,40,0.7)");
+    var span = Math.max(map.size_m[0], map.size_m[1]);
+    spawnFx(d.x, d.eye + 4, d.z, fxFlashTex, span * 0.012, 180);
+  }
+  function spawnImpact(td) {
+    if (!fxSparkTex) fxSparkTex = flashTexture("rgba(255,210,150,1)", "rgba(220,80,50,0.7)");
+    var span = Math.max(map.size_m[0], map.size_m[1]);
+    spawnFx(td.x, td.eye + 6, td.z, fxSparkTex, span * 0.010, 260);
+  }
+  // Per-frame: fade and retire FX sprites.
+  function updateFxSprites() {
+    if (!cmd.fxGroup) return;
+    var now = performance.now(), rm = [];
+    cmd.fxGroup.children.forEach(function (o) {
+      if (!o.userData || !o.userData.life) return;
+      var t = (now - o.userData.born) / o.userData.life;
+      if (t >= 1) { rm.push(o); return; }
+      o.material.opacity = (1 - t);
+      var s = o.userData.size0 * (1 + t * 0.8);
+      o.scale.set(s, s, 1);
+    });
+    rm.forEach(function (o) { cmd.fxGroup.remove(o); if (o.material.map) {} o.material.dispose(); });
   }
 
   // ---- BEST POSITION helper ----------------------------------------------------
@@ -2483,42 +3286,51 @@
     // clear objective flags
     if (cmd.objective && cmd.objective.parent) cmd.flagGroup.remove(cmd.objective);
     cmd.objective = null;
+    clearSuburbObjectives();
     units.forEach(function (g) { clearOrders(g); });
     var u = units;   // 6 demo units
     var objName = "—";
     if (key === "harbour_crossing") {
       // friendlies south of harbour, objective on far north shore, 2 enemies defending
-      relabelUnit(u[0], "ANZAC-01", "friend", "Line",  "BR-155 (18km)", 18000, W*0.42, L*0.14, "Assault element. Crossing the harbour to seize the north shore.");
-      relabelUnit(u[1], "ANZAC-02", "friend", "Siege", "SG-305 (30km)", 30000, W*0.55, L*0.10, "Siege support. Flagship — directs the crossing.");
-      relabelUnit(u[2], "ANZAC-03", "friend", "Recon", "SR-90 (9km)",    9000, W*0.66, L*0.18, "Amphibious scout. Leads the water crossing.");
-      relabelUnit(u[3], "ANZAC-04", "friend", "Line",  "BR-120 (12km)", 12000, W*0.34, L*0.18, "Flank guard.");
-      relabelUnit(u[4], "DEFENDER-1", "hostile", "Line", "? (defending)", 16000, W*0.46, L*0.86, "Dug in on the north shore objective.");
-      relabelUnit(u[5], "DEFENDER-2", "hostile", "Line", "? (defending)", 14000, W*0.58, L*0.88, "Second defender covering the objective.");
+      relabelUnit(u[0], "ANZAC-01", "friend", "Line",  "BR-155", 6500, W*0.42, L*0.14, "Assault element. Crossing the harbour to seize the north shore.");
+      relabelUnit(u[1], "ANZAC-02", "friend", "Siege", "SG-305", 9500, W*0.55, L*0.10, "Siege support. Flagship — directs the crossing.");
+      relabelUnit(u[2], "ANZAC-03", "friend", "Recon", "SR-76",  2800, W*0.66, L*0.18, "Amphibious scout. Leads the water crossing.");
+      relabelUnit(u[3], "ANZAC-04", "friend", "Line",  "BR-120", 5000, W*0.34, L*0.18, "Flank guard.");
+      relabelUnit(u[4], "DEFENDER-1", "hostile", "Line", "?-150 (defending)", 6000, W*0.46, L*0.86, "Dug in on the north shore objective.");
+      relabelUnit(u[5], "DEFENDER-2", "hostile", "Line", "?-130 (defending)", 5000, W*0.58, L*0.88, "Second defender covering the objective.");
       placeObjective(W*0.50, L*0.90, "NORTH SHORE — far harbour bank");
+      flagNearestSuburb(W*0.50, L*0.90, "hold");     // mark the north-shore suburb as a hold site
       objName = "SEIZE NORTH SHORE";
       setFlagship(u[1]);
     } else if (key === "ridge_defence") {
       // friendlies on high ground, enemies attacking from low, HOLD flag on crest
-      relabelUnit(u[0], "ANZAC-01", "friend", "Line",  "BR-155 (18km)", 18000, 1084, 8801, "Holding the high crest. Flagship.");
-      relabelUnit(u[1], "ANZAC-02", "friend", "Siege", "SG-305 (30km)", 30000, 1500, 8500, "Siege gun on the ridge — dominates the approaches.");
-      relabelUnit(u[2], "ANZAC-03", "friend", "Recon", "SR-90 (9km)",    9000,  800, 9100, "Spotter on the flank of the ridge.");
-      relabelUnit(u[3], "ANZAC-04", "friend", "Line",  "BR-120 (12km)", 12000, 1300, 9200, "Reserve, just behind the crest.");
-      relabelUnit(u[4], "RAIDER-1", "hostile", "Line", "? (attacking)", 15000, 3200, 7000, "Attacking uphill from the low ground.");
-      relabelUnit(u[5], "RAIDER-2", "hostile", "Line", "? (attacking)", 15000, 2400, 6400, "Second attacker pushing the ridge.");
+      relabelUnit(u[0], "ANZAC-01", "friend", "Line",  "BR-155", 6500, 1084, 8801, "Holding the high crest. Flagship.");
+      relabelUnit(u[1], "ANZAC-02", "friend", "Siege", "SG-305", 9500, 1500, 8500, "Siege gun on the ridge — dominates the approaches.");
+      relabelUnit(u[2], "ANZAC-03", "friend", "Recon", "SR-76",  2800,  800, 9100, "Spotter on the flank of the ridge.");
+      relabelUnit(u[3], "ANZAC-04", "friend", "Line",  "BR-120", 5000, 1300, 9200, "Reserve, just behind the crest.");
+      relabelUnit(u[4], "RAIDER-1", "hostile", "Line", "?-150 (attacking)", 5500, 3200, 7000, "Attacking uphill from the low ground.");
+      relabelUnit(u[5], "RAIDER-2", "hostile", "Line", "?-150 (attacking)", 5500, 2400, 6400, "Second attacker pushing the ridge.");
       placeObjective(1084, 8801, "HOLD THE CREST");
+      flagNearestSuburb(1084, 8801, "hold");
       objName = "HOLD THE CREST";
       setFlagship(u[0]);
     } else if (key === "convoy_escort") {
       // a slow convoy must reach an exit flag; raiders intercept
-      relabelUnit(u[0], "CONVOY-LEAD", "friend", "Convoy", "light (4km)", 4000, W*0.12, L*0.30, "Slow convoy. Must reach the EXIT. Flagship.");
-      relabelUnit(u[1], "ESCORT-1", "friend", "Line",  "BR-120 (12km)", 12000, W*0.16, L*0.36, "Close escort.");
-      relabelUnit(u[2], "ESCORT-2", "friend", "Recon", "SR-90 (9km)",    9000, W*0.10, L*0.24, "Outrider — screens ahead.");
-      relabelUnit(u[3], "ESCORT-3", "friend", "Line",  "BR-155 (18km)", 18000, W*0.18, L*0.30, "Rear guard.");
-      relabelUnit(u[4], "RAIDER-1", "hostile", "Recon", "? (raider)", 9000, W*0.55, L*0.55, "Fast raider trying to intercept the convoy.");
-      relabelUnit(u[5], "RAIDER-2", "hostile", "Line",  "? (raider)", 12000, W*0.72, L*0.40, "Second raider closing on the route.");
+      relabelUnit(u[0], "CONVOY-LEAD", "friend", "Convoy", "MG-30", 1500, W*0.12, L*0.30, "Slow convoy. Must reach the EXIT. Flagship.");
+      relabelUnit(u[1], "ESCORT-1", "friend", "Line",  "BR-120", 5000, W*0.16, L*0.36, "Close escort.");
+      relabelUnit(u[2], "ESCORT-2", "friend", "Recon", "SR-76",  2800, W*0.10, L*0.24, "Outrider — screens ahead.");
+      relabelUnit(u[3], "ESCORT-3", "friend", "Line",  "BR-155", 6500, W*0.18, L*0.30, "Rear guard.");
+      relabelUnit(u[4], "RAIDER-1", "hostile", "Recon", "?-90 (raider)", 3200, W*0.55, L*0.55, "Fast raider trying to intercept the convoy.");
+      relabelUnit(u[5], "RAIDER-2", "hostile", "Line",  "?-120 (raider)", 5000, W*0.72, L*0.40, "Second raider closing on the route.");
       placeObjective(W*0.88, L*0.62, "CONVOY EXIT");
+      flagNearestSuburb(W*0.88, L*0.62, "protect");
       objName = "GET CONVOY TO EXIT";
       setFlagship(u[0]);
+    }
+    // ensure the neon suburb markers are visible so the flagged objective site reads
+    if (!show.suburbs) { show.suburbs = true;
+      if (suburbGroup) suburbGroup.visible = true;
+      var sb = document.getElementById("tSub"); if (sb) sb.classList.add("on");
     }
     selected = units[0]; selectUnit(selected);
     var sd = document.getElementById("scenSel"); if (sd) sd.value = key;
@@ -2529,6 +3341,23 @@
     frameCamera();
     rebuildOverlays();
     syncCommandPanel();
+  }
+
+  // Flag the suburb marker nearest a map point as an objective site (item E9). state =
+  // "hold"|"protect". Returns the marker (or null). Used by scenarios to colour a neon ring.
+  function flagNearestSuburb(x, z, state) {
+    if (!suburbMarkers || !suburbMarkers.length) return null;
+    var best = null, bd = Infinity;
+    suburbMarkers.forEach(function (m) {
+      var dd = (m.x - x) * (m.x - x) + (m.z - z) * (m.z - z);
+      if (dd < bd) { bd = dd; best = m; }
+    });
+    if (best) return setSuburbObjective(best.name, state);
+    return null;
+  }
+  // Reset all suburb objective states back to plain neon (called when a scenario reloads).
+  function clearSuburbObjectives() {
+    (suburbMarkers || []).forEach(function (m) { if (m.objState) setSuburbObjective(m.name, null); });
   }
 
   function placeObjective(x, z, label) {
@@ -2556,9 +3385,16 @@
         }
       });
     }
-    // nudge everyone forward a bit so the screenshot shows motion + tracers immediately
+    // nudge everyone forward a bit so the screenshot shows motion + tracers immediately.
+    // Warm the sim a while so units close to contact and exchange fire (slow speeds now).
     units.forEach(function (g) { g.userData._engageAll = true; });
-    for (var i = 0; i < 90; i++) stepCommandSim(0.1);
+    // run the sim forward enough wall-time that attackers close to contact and exchange fire
+    // (slow speeds now). This is headless setup only — it primes the screenshot with combat.
+    // cmd._warmup suppresses per-shot FX/sound spam while fast-forwarding.
+    var savedSpeed = simSpeed; simSpeed = 1; cmd._warmup = true;
+    for (var i = 0; i < 2100; i++) stepCommandSim(0.1);
+    cmd._warmup = false; simSpeed = savedSpeed;
+    drawOrderLines(); if (selected) rebuildOverlays();
   }
 
   function checkFlagshipNet() {
@@ -2598,6 +3434,12 @@
     // COMMAND MODE: advance movement + combat when playing
     if (cmd.on && cmd.playing) stepCommandSim(dt);
     else if (cmd.on) updateFiringFx();   // keep tracers tidy when paused
+    if (cmd.on) updateFxSprites();       // fade muzzle/impact flashes
+
+    // HUD compass rose: follow the live camera heading vs TRUE north
+    updateCompassHud();
+    // refresh the selected unit's facing dial (it rotates as it moves under command sim)
+    if (selected && document.getElementById("unit").style.display !== "none") updateUnitFacing(selected);
 
     // pulse the selected unit's halo
     if (selected && selected.userData.haloMat) {

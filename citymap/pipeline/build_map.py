@@ -89,6 +89,22 @@ def main():
     else:
         print("[build_map] no buildings cache; terrain-only map")
 
+    # --- roads (optional) ---
+    roads_out = []
+    rraw_fn = os.path.join(CACHE, f"{city}_roads_raw.json")
+    if os.path.exists(rraw_fn):
+        rraw = json.load(open(rraw_fn))
+        for r in rraw:
+            path = []
+            for lon, lat in r["path"]:
+                x_m = (lon - west) * mpd_lon
+                z_m = (lat - south) * mpd_lat
+                # keep only points within (or near) the map
+                path.append([round(x_m, 1), round(z_m, 1)])
+            if len(path) >= 2:
+                roads_out.append({"path": path, "kind": r["kind"]})
+        print(f"[build_map] embedded {len(roads_out)} roads")
+
     water_level = info.get("water_level_m", 0.0)
     water_frac = float((heights <= water_level).mean())
     out = {
@@ -109,6 +125,7 @@ def main():
             ],  # row-major z*res+x
         },
         "buildings": buildings_out,
+        "roads": roads_out,
     }
 
     # --- weather (optional) ---

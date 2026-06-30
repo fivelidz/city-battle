@@ -11,8 +11,8 @@ CITIES = {
         "bbox": [151.18, -33.90, 151.30, -33.79],
         "water_level_m": 0.0,
         "dem_zoom": 14,
-        # Buildings across the harbour/CBD/eastern core.
-        "buildings_bbox": [151.19, -33.89, 151.27, -33.83],
+        # Buildings across the WHOLE map bbox (not just the core) so the entire theatre is built up.
+        "buildings_bbox": [151.18, -33.90, 151.30, -33.79],
     },
     # Tight harbour assault map (smaller, very dense) for close urban fights.
     "sydney_harbour": {
