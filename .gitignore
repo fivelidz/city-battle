@@ -30,3 +30,8 @@ citymap/data/*_terrain.stl
 /tmp/
 
 # Keep: Assets/, citymap/web, citymap/pipeline, citymap/data/*.citymap.json, docs/
+
+# Old terrain_pipeline large outputs
+terrain_pipeline/out/*.obj
+terrain_pipeline/out/*_osm_raw.json
+terrain_pipeline/cache/
