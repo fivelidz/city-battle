@@ -261,6 +261,74 @@ namespace CityBattle.Tests
             Assert.IsFalse(c.OnNet, "With the relay's comms mast destroyed, C loses comms.");
         }
 
+        // ---- Intelligence: camouflage & RDF ----
+        [Test]
+        public void Camouflage_ReducesDetectionRange()
+        {
+            var t = FlatWithChannel(20f, 20f, float.NegativeInfinity); // flat, clear LOS
+            var sim = new BattleSim(t, 3);
+            var obs = Mk("OBS", ChassisClass.Line, new Vector3(100, 0, 100), t); obs.Id = 1; obs.Team = 0;
+            // Target at the very edge of base sight range.
+            float r = obs.BaseSightRange * 0.9f;
+            var tgt = Mk("TGT", ChassisClass.Line, new Vector3(100, 0, 100 + r), t); tgt.Id = 2; tgt.Team = 1;
+            sim.Units.Add(obs); sim.Units.Add(tgt);
+
+            tgt.Camouflage = 1f;  // no camo -> spotted
+            for (int i = 0; i < 6; i++) sim.Tick();
+            Assert.IsTrue(sim.IsVisibleTo(tgt, 0), "Uncamouflaged target at 0.9x sight should be seen.");
+
+            tgt.Camouflage = 0.5f; // heavy camo halves detection range -> now out of detection
+            for (int i = 0; i < 6; i++) sim.Tick();
+            Assert.IsFalse(sim.IsVisibleTo(tgt, 0), "Camouflage should shrink the range at which it's detected.");
+        }
+
+        [Test]
+        public void RDF_LocatesEmittingUnit_WithoutLOS()
+        {
+            // Tall ridge blocks LOS, but an emitting unit is found by RDF.
+            int n = 200; float cell = 12f; var hm = new float[n, n];
+            for (int x = 0; x < n; x++) for (int z = 0; z < n; z++)
+                hm[x, z] = 20f + (z >= 95 && z <= 105 ? 260f : 0f);
+            var terrain = new TerrainField(hm, cell, Vector3.zero);
+            var sim = new BattleSim(terrain, 7);
+            var obs = Mk("OBS", ChassisClass.Line, new Vector3(1200, 0, 600), terrain); obs.Id = 1; obs.Team = 0;
+            var emitter = Mk("JAM", ChassisClass.Line, new Vector3(1200, 0, 1700), terrain); emitter.Id = 2; emitter.Team = 1;
+            // Give it a jammer module so it emits.
+            emitter.EwModules.Add(_db.EwModules.Find(e => e.type == EwType.Jammer));
+            sim.Units.Add(obs); sim.Units.Add(emitter);
+
+            for (int i = 0; i < 8; i++) sim.Tick();
+            Assert.IsFalse(sim.IsSpotted(emitter), "Behind the ridge it shouldn't be visually spotted.");
+            Assert.IsTrue(emitter.Emitting, "A jammer-equipped unit emits.");
+            Assert.IsTrue(emitter.RdfDetected, "RDF should locate the emitting unit even without LOS.");
+            Assert.IsTrue(sim.IsDetectedByEnemy(emitter), "Detected via RDF counts as known to the enemy.");
+        }
+
+        [Test]
+        public void RelayDrone_BridgesCommsOverRidge()
+        {
+            int n = 200; float cell = 12f; var hm = new float[n, n];
+            for (int x = 0; x < n; x++) for (int z = 0; z < n; z++)
+                hm[x, z] = 20f + (z >= 95 && z <= 105 ? 220f : 0f);
+            var terrain = new TerrainField(hm, cell, Vector3.zero);
+            var sim = new BattleSim(terrain, 11);
+            var cmd = Mk("HQ", ChassisClass.Line, new Vector3(1200, 0, 600), terrain); cmd.Id = 1; cmd.Team = 0;
+            var fwd = Mk("FWD", ChassisClass.Line, new Vector3(1200, 0, 1700), terrain); fwd.Id = 2; fwd.Team = 0;
+            sim.Units.Add(cmd); sim.Units.Add(fwd);
+
+            // No drone: forward unit off the net behind the ridge.
+            CommsNet.Recompute(sim.Units, terrain, 0, 1.0, cmd, sim.ActiveDrones);
+            Assert.IsFalse(fwd.OnNet, "Without a relay, forward unit is off the net.");
+
+            // Launch a recon drone high over the ridge with LOS to both.
+            var reconDef = _db.Drones.Find(d => d.role == DroneRole.Recon);
+            var drone = new Combat.Drones.DroneAgent(reconDef, 0, cmd.EyePosition, new Vector3(1200, 0, 1150));
+            drone.Position = new Vector3(1200, terrain.HeightAt(1200, 1150) + 400, 1150); // high above the crest
+            sim.ActiveDrones.Add(drone);
+            CommsNet.Recompute(sim.Units, terrain, 0, 2.0, cmd, sim.ActiveDrones);
+            Assert.IsTrue(fwd.OnNet, "A relay drone aloft should bridge comms over the ridge.");
+        }
+
         // ---- Design class derivation ----
         [Test]
         public void Design_DerivesRtWClassCodes()

@@ -107,6 +107,11 @@ namespace CityBattle.Units
         /// <summary>Can this crab act as a comms relay node? (Alive + comms mast working.)</summary>
         public bool CanRelay => Alive && (Sys == null || Sys.CommsMastWorking);
 
+        // ---- Intelligence: camouflage & emissions (RDF) ----
+        public float Camouflage = 1f;   // 1 = none; <1 shrinks the range at which enemies detect it
+        public bool Emitting;           // is it radiating (active radar/jammer/radio) -> RDF-detectable
+        public bool RdfDetected;        // currently located by enemy RDF (bearing/approx, not full ID)
+
         public Vector3 Forward => Quaternion.Euler(0, HeadingDeg, 0) * Vector3.forward;
         public Vector3 EyePosition => Position + Vector3.up * EyeHeight;
 

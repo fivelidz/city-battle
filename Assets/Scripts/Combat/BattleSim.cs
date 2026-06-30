@@ -66,8 +66,9 @@ namespace CityBattle.Combat
             {
                 RecomputeVision();
                 // Comms net (LOS-relay) for both teams — reuses the terrain LOS ray-march.
-                CommsNet.Recompute(Units, Terrain, 0, SimTime);
-                CommsNet.Recompute(Units, Terrain, 1, SimTime);
+                // Recon/relay drones aloft bridge LOS gaps over terrain.
+                CommsNet.Recompute(Units, Terrain, 0, SimTime, null, ActiveDrones);
+                CommsNet.Recompute(Units, Terrain, 1, SimTime, null, ActiveDrones);
                 _losTickCounter = 0;
             }
 
@@ -105,6 +106,16 @@ namespace CityBattle.Combat
 
             // 7. Subsystem upkeep (fires spread, burn damage, cook-off).
             foreach (var u in Units) if (u.Alive) u.TickSystems(dt, Rng);
+
+            // 7b. Emissions: a crab radiates (RDF-detectable) if it runs a jammer or active sensor.
+            foreach (var u in Units)
+            {
+                if (!u.Alive) { u.Emitting = false; continue; }
+                u.Emitting = false;
+                foreach (var e in u.EwModules)
+                    if (e.type == Data.EwType.Jammer || e.type == Data.EwType.Spoofer ||
+                        e.type == Data.EwType.DroneDetector) { u.Emitting = true; break; }
+            }
 
             // 8. Win/loss bookkeeping handled by caller (BattleController).
         }
@@ -165,6 +176,22 @@ namespace CityBattle.Combat
                 }
             }
 
+            // RDF (radio direction finding): a unit that is EMITTING (active radar / jammer / radio)
+            // can be located by the enemy out to a long RDF range WITHOUT line of sight — an
+            // approximate fix, not a full ID. Encourages emission control (go quiet to stay hidden).
+            const float RdfRange = 22000f;
+            foreach (var u in Units) if (u.Alive) u.RdfDetected = false;
+            foreach (var u in Units)
+            {
+                if (!u.Alive || !u.Emitting) continue;
+                int enemyTeam = 1 - u.Team;
+                foreach (var observer in Units)
+                {
+                    if (observer.Team != enemyTeam || !observer.Alive) continue;
+                    if (Vector3.Distance(observer.Position, u.Position) <= RdfRange) { u.RdfDetected = true; break; }
+                }
+            }
+
             // Log NEW contacts (and lost contacts) for each team.
             for (int team = 0; team < 2; team++)
             {
@@ -175,6 +202,9 @@ namespace CityBattle.Combat
             }
         }
 
+        /// <summary>Is `u` known to the enemy team (visually spotted OR located by RDF if emitting)?</summary>
+        public bool IsDetectedByEnemy(MechaUnit u) => IsSpotted(u) || u.RdfDetected;
+
         /// <summary>Name of the friendly observer/drone that spotted `target` for `team` (relay UI).</summary>
         public string SpotterFor(MechaUnit target, int team)
             => SpottedBy[team].TryGetValue(target, out var n) ? n : null;
@@ -183,7 +213,9 @@ namespace CityBattle.Combat
         {
             Vector3 tp = target.EyePosition;
             float dist = Vector3.Distance(eye, tp);
-            if (dist > sightRange) return false;
+            // Camouflage shrinks the range at which a target is detected (weather also cuts it).
+            float effRange = sightRange * Mathf.Clamp01(target.Camouflage) * (1f - Precipitation * 0.4f);
+            if (dist > effRange) return false;
             // Hull-down targets are only spottable from above or very close.
             float clearance = target.HullDown ? target.EyeHeight * 0.5f : 0f;
             return Terrain.HasLineOfSight(eye, tp, clearance);

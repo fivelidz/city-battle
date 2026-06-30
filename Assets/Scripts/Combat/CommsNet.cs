@@ -19,7 +19,8 @@ namespace CityBattle.Combat
         /// units that have dropped off. `commandUnit` is the HQ link (e.g. the highest/first unit).
         /// </summary>
         public static void Recompute(IReadOnlyList<MechaUnit> units, TerrainField terrain, int team,
-                                     double simTime, MechaUnit commandUnit = null)
+                                     double simTime, MechaUnit commandUnit = null,
+                                     IReadOnlyList<Drones.DroneAgent> drones = null)
         {
             var team_units = new List<MechaUnit>();
             foreach (var u in units) if (u.Team == team && u.Alive) team_units.Add(u);
@@ -53,6 +54,24 @@ namespace CityBattle.Combat
                     other.RelayVia = (relay == cmd) ? null : relay.Name;
                     queue.Enqueue(other);
                 }
+
+                // RELAY DRONES: a friendly drone aloft with LOS to this relay re-broadcasts comms
+                // to every unit IT can see — bridging LOS gaps over terrain (the recon/relay role).
+                if (drones != null)
+                    foreach (var d in drones)
+                    {
+                        if (d.Team != team || d.Dead) continue;
+                        if (!terrain.HasLineOfSight(relay.EyePosition, d.Position)) continue;
+                        foreach (var other in team_units)
+                        {
+                            if (onNet.Contains(other)) continue;
+                            if (Vector3.Distance(d.Position, other.EyePosition) > d.Def.rangeM) continue;
+                            if (!terrain.HasLineOfSight(d.Position, other.EyePosition)) continue;
+                            onNet.Add(other);
+                            other.RelayVia = d.Def.name + " (drone)";
+                            queue.Enqueue(other);
+                        }
+                    }
             }
 
             // Apply on/off-net state + ghost (last-known) tracking.
