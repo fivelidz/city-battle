@@ -95,6 +95,18 @@ namespace CityBattle.Units
         public float BaseSightRange = 4000f;  // metres on flat ground (terrain extends/limits)
         public float EyeHeight = 6f;          // metres above ground (chassis height)
 
+        // ---- Comms (line-of-sight / laser net) ----
+        public float CommsRangeM = 9000f;     // tight-beam comms reach (LOS required)
+        public bool OnNet = true;             // connected to the command net (controllable + live intel)
+        public string RelayVia;               // name of the relay we connect through (null = direct/command)
+        // Last-known position held by the net when a unit drops off (the "ghost" marker).
+        public Vector3 LastKnownPos;
+        public double LastContactTime;        // sim time when last on the net
+        public bool HasGhost;                 // we have a stale last-known position for an off-net unit
+
+        /// <summary>Can this crab act as a comms relay node? (Alive + comms mast working.)</summary>
+        public bool CanRelay => Alive && (Sys == null || Sys.CommsMastWorking);
+
         public Vector3 Forward => Quaternion.Euler(0, HeadingDeg, 0) * Vector3.forward;
         public Vector3 EyePosition => Position + Vector3.up * EyeHeight;
 

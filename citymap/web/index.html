@@ -56,6 +56,7 @@
 <div class="panel" id="top">
   <span class="t">CITY BATTLE</span><span class="dim" style="font-size:11px">// TACTICAL MAP</span>
   <span id="cityName" class="k" style="font-size:11px"></span>
+  <span id="commsTop" class="k" style="font-size:11px;color:var(--teal);display:none;letter-spacing:.12em"></span>
   <span class="r" id="status">SECTOR SCAN</span>
 </div>
 
@@ -72,8 +73,10 @@
 
 <div class="panel" id="legend">
   <div class="hdr">Overlays</div>
-  <div class="leg"><span class="sw" style="background:#6db48f;opacity:.6"></span> LINE OF SIGHT</div>
-  <div class="leg"><span class="sw" style="background:#b0822c;opacity:.7"></span> GUN RANGE</div>
+  <div class="leg"><span class="sw" style="background:#6db48f;opacity:.85"></span> LINE OF SIGHT</div>
+  <div class="leg"><span class="sw" style="background:#e8a838"></span> GUN RANGE (max)</div>
+  <div class="leg"><span class="sw" style="background:#c87a3a"></span> EFFECTIVE RANGE</div>
+  <div class="leg"><span class="sw" style="background:#5fd6c6"></span> COMMS LINK</div>
   <div class="leg"><span class="sw" style="background:#3e7a74"></span> FRIENDLY CRAB</div>
   <div class="leg"><span class="sw" style="background:#9a3a33"></span> HOSTILE CRAB</div>
   <div class="leg"><span class="sw" style="background:#7a6a3a"></span> CIVILIAN SCAVENGER</div>
@@ -102,6 +105,23 @@
     <button class="btn" id="tWire">CONTOUR WIRE</button>
     <button class="btn" id="tSub">SUBURBS</button>
     <button class="btn" id="tFogCull">FOG CULL</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Command &amp; Control</div>
+  <div class="tg">
+    <button class="btn" id="tComms">COMMS NET</button>
+    <button class="btn" id="tDead">DEAD ZONES</button>
+  </div>
+  <div id="deadLeg" style="display:none">
+    <div class="leg"><span class="sw" style="background:#7fdf8c"></span> CAN HIT (direct fire)</div>
+    <div class="leg"><span class="sw" style="background:#d75a52"></span> DEAD ZONE (masked)</div>
+    <div class="leg"><span class="sw" style="background:#5d6d64"></span> OUT OF RANGE</div>
+    <div class="row dim" style="margin-top:3px;font-size:9px;line-height:1.5;letter-spacing:.02em">FIRE PICTURE for the selected crab: flat fire cannot reach the red pockets hiding behind crests within gun range.</div>
+  </div>
+  <div id="commsLeg" style="display:none">
+    <div class="leg"><span class="sw" style="background:#5fd6c6"></span> COMMS LINK (LOS)</div>
+    <div class="leg"><span class="sw" style="background:#9a3a33"></span> OFF NET &middot; no contact</div>
+    <div class="row" style="margin-top:5px"><span class="dim">COMMS</span> <span id="commsStat" class="k">--</span></div>
+    <div class="row dim" style="margin-top:3px;font-size:9px;line-height:1.5;letter-spacing:.02em">Tight-beam laser comms need line of sight. A crab behind a ridge falls off the net &mdash; no orders, no live intel.</div>
   </div>
   <div class="hdr" style="margin-top:9px">Weather</div>
   <div class="tg">
@@ -156,6 +176,11 @@
   <div class="row dim">STRUCT</div><div class="bar"><i id="uStruct"></i></div>
   <div class="row"><span class="dim">GUN&nbsp;&nbsp;</span> <span id="uGun"></span></div>
   <div class="row"><span class="dim">RANGE</span> <span id="uRange"></span></div>
+  <div class="row"><span class="dim">COMMS</span> <span id="uComms" class="k">--</span></div>
+  <div id="uDeadRow" style="display:none;margin-top:5px">
+    <div class="row"><span class="dim">DEAD ZONE</span> <span id="uDeadPct" class="warn">--</span> <span class="dim">of range masked</span></div>
+    <div class="bar"><i id="uDeadBar" style="background:var(--red)"></i></div>
+  </div>
   <div class="row dim" id="uNote" style="margin-top:5px"></div>
 </div>
 
@@ -164,7 +189,7 @@
   <button class="btn" id="zout">&minus;</button>
   <button class="btn" id="rst">RESET</button>
 </div>
-<div class="hint">DRAG orbit &middot; WHEEL zoom &middot; CLICK a crab to inspect &middot; <span style="color:var(--amber)">F</span> = fly cam<br>map review viewer &mdash; shared data with the Unity game</div>
+<div class="hint">DRAG orbit &middot; WHEEL zoom &middot; CLICK a crab to inspect &middot; <span style="color:var(--amber)">F</span> = fly cam<br><span style="color:var(--amber)">, / .</span> cycle units &middot; <span style="color:var(--amber)">DEAD ZONES</span> = selected crab's fire picture<br>map review viewer &mdash; shared data with the Unity game</div>
 
 <div id="flyHint">
   <span class="a">FLY CAM ACTIVE</span> &nbsp;&middot;&nbsp;

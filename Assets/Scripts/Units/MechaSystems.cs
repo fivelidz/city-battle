@@ -124,12 +124,16 @@ namespace CityBattle.Units
             return s.Functional ? Mathf.Lerp(0.25f, 1f, s.integrity) : 0.1f;
         }
 
-        /// <summary>Datalink health (drone control / shared targeting).</summary>
+        /// <summary>Datalink/comms-mast health (drone control, shared targeting, AND the comms relay).
+        /// In CITY BATTLE comms are tight-beam/laser (line-of-sight): the datalink is the comms mast.</summary>
         public float DatalinkFactor()
         {
             var d = Get(Subsystem.Datalink);
             return d != null && d.Functional ? d.integrity : 0f;
         }
+
+        /// <summary>Can this crab transmit/relay on the comms net? (Comms mast / datalink must work.)</summary>
+        public bool CommsMastWorking => DatalinkFactor() > 0.2f;
 
         public bool Blinded => FireControlFactor() <= 0.2f;
 

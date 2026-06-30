@@ -62,7 +62,14 @@ namespace CityBattle.Combat
 
             // 1. Vision FIRST so AI & fire control act on current spotting.
             _losTickCounter++;
-            if (_losTickCounter >= 4) { RecomputeVision(); _losTickCounter = 0; }
+            if (_losTickCounter >= 4)
+            {
+                RecomputeVision();
+                // Comms net (LOS-relay) for both teams — reuses the terrain LOS ray-march.
+                CommsNet.Recompute(Units, Terrain, 0, SimTime);
+                CommsNet.Recompute(Units, Terrain, 1, SimTime);
+                _losTickCounter = 0;
+            }
 
             // 2. AI commanders issue orders (intent) on a slower cadence (every ~0.5s).
             if (_tick % 10 == 0)

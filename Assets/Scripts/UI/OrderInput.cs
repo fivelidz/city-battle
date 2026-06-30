@@ -63,6 +63,14 @@ namespace CityBattle.UI
         void HandleOrder()
         {
             if (Selected == null || !Selected.Alive) return;
+            // Off the comms net = out of contact: the player can't issue new orders (it follows
+            // its last orders). Only friendly (team 0) units are player-commanded.
+            if (Selected.Team == 0 && !Selected.OnNet)
+            {
+                Controller.Sim.Log.Add(Controller.Sim.SimTime, Combat.LogKind.Order,
+                    $"{Selected.Name} OUT OF CONTACT — no comms (order not sent)", Selected.Id);
+                return;
+            }
             if (!RaycastGround(out Vector3 hit)) return;
 
             // Right-click near an enemy = target it; otherwise = move order.

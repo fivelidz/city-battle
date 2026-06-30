@@ -211,6 +211,56 @@ namespace CityBattle.Tests
             Assert.IsTrue(cs.RemovedFromCommand, "Prestige hitting 0 removes you from command.");
         }
 
+        // ---- Comms net (LOS relay) ----
+        [Test]
+        public void CommsNet_RidgeDropsUnitOffNet_RelayRestoresIt()
+        {
+            // Command unit south; a forward unit north behind a tall ridge (no direct LOS).
+            int n = 200; float cell = 12f; var hm = new float[n, n];
+            for (int x = 0; x < n; x++) for (int z = 0; z < n; z++)
+                hm[x, z] = 20f + (z >= 95 && z <= 105 ? 220f : 0f);
+            var terrain = new TerrainField(hm, cell, Vector3.zero);
+
+            var cmd = Mk("HQ", ChassisClass.Line, new Vector3(1200, 0, 600), terrain);
+            cmd.Id = 1; cmd.Team = 0; cmd.CommsRangeM = 9000;
+            var fwd = Mk("FWD", ChassisClass.Line, new Vector3(1200, 0, 1700), terrain);
+            fwd.Id = 2; fwd.Team = 0; fwd.CommsRangeM = 9000;
+            var units = new System.Collections.Generic.List<MechaUnit> { cmd, fwd };
+
+            // No relay, ridge blocks LOS -> forward unit is OFF the net (ghost held).
+            CommsNet.Recompute(units, terrain, 0, 10.0, cmd);
+            Assert.IsTrue(cmd.OnNet, "Command node is on the net.");
+            Assert.IsFalse(fwd.OnNet, "Unit behind a tall ridge has no LOS comms -> off the net.");
+            Assert.IsTrue(fwd.HasGhost, "Off-net unit should leave a last-known ghost.");
+
+            // Add a relay on the ridge with LOS to both -> forward unit back ON the net via relay.
+            var relay = Mk("RELAY", ChassisClass.Recon, new Vector3(1200, 0, 1200), terrain);
+            relay.Position = new Vector3(1200, terrain.HeightAt(1200, 1200) + 200, 1200); // atop the ridge
+            relay.EyeHeight = 12f; relay.Id = 3; relay.Team = 0; relay.CommsRangeM = 9000;
+            units.Add(relay);
+            CommsNet.Recompute(units, terrain, 0, 11.0, cmd);
+            Assert.IsTrue(fwd.OnNet, "A relay with LOS to both should put the forward unit back on the net.");
+        }
+
+        [Test]
+        public void CommsNet_DeadCommsMast_CannotRelay()
+        {
+            var t = FlatWithChannel(20f, 20f, float.NegativeInfinity); // flat, clear LOS everywhere
+            var a = Mk("HQ", ChassisClass.Line, new Vector3(100, 0, 100), t); a.Id = 1; a.Team = 0;
+            var b = Mk("MID", ChassisClass.Line, new Vector3(100, 0, 5000), t); b.Id = 2; b.Team = 0;
+            var c = Mk("FAR", ChassisClass.Line, new Vector3(100, 0, 9500), t); c.Id = 3; c.Team = 0;
+            a.CommsRangeM = b.CommsRangeM = c.CommsRangeM = 6000;  // A->B->C chain (A can't reach C directly)
+            var units = new System.Collections.Generic.List<MechaUnit> { a, b, c };
+
+            CommsNet.Recompute(units, t, 0, 1.0, a);
+            Assert.IsTrue(c.OnNet, "C should be on the net via relay B.");
+
+            // Destroy B's comms mast (datalink) -> B can't relay -> C falls off.
+            b.Sys.Get(CityBattle.Units.Subsystem.Datalink).integrity = 0f;
+            CommsNet.Recompute(units, t, 0, 2.0, a);
+            Assert.IsFalse(c.OnNet, "With the relay's comms mast destroyed, C loses comms.");
+        }
+
         // ---- Design class derivation ----
         [Test]
         public void Design_DerivesRtWClassCodes()
