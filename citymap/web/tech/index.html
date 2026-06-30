@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CITY BATTLE // TECH DEVELOPMENT</title>
+<style>
+  :root{
+    --bg:#0b0d0c; --panel:rgba(13,17,16,.86); --hair:rgba(120,140,130,.16);
+    --ink:#9eb0a5; --dim:#5d6d64; --amber:#b0822c; --orange:#9e5420;
+    --red:#9a3a33; --teal:#3e7a74; --good:#6f9e6a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;min-height:100%;background:var(--bg);
+    font-family:"DejaVu Sans Mono",ui-monospace,Consolas,monospace;color:var(--ink);font-size:12px}
+  body{overflow-y:auto}
+  /* ---------------- top nav ---------------- */
+  #top{position:sticky;top:0;left:0;right:0;height:30px;display:flex;align-items:center;gap:16px;
+    padding:0 14px;background:var(--panel);border-bottom:1px solid var(--hair);z-index:20}
+  #top .t{color:var(--orange);font-weight:bold;letter-spacing:.3em;font-size:13px}
+  #top .dim{color:var(--dim)}
+  #top .nav{display:flex;align-items:center}
+  #top .nav a{color:var(--dim);text-decoration:none;letter-spacing:.1em;margin-left:14px}
+  #top .nav a:hover{color:var(--amber)}
+  #top .r{margin-left:auto;color:var(--dim);letter-spacing:.1em}
+  #top .r b{color:var(--amber)}
+  /* ---------------- layout ---------------- */
+  #wrap{display:grid;grid-template-columns:262px 1fr 296px;gap:10px;padding:10px;align-items:start}
+  .panel{background:var(--panel);border:1px solid var(--hair)}
+  .hdr{color:var(--amber);font-size:11px;letter-spacing:.22em;font-weight:bold;
+    text-transform:uppercase;padding:8px 12px 5px;border-bottom:1px solid var(--hair)}
+  .grp{padding:8px 12px;border-bottom:1px solid var(--hair)}
+  .lbl{color:var(--dim);font-size:10px;letter-spacing:.08em;margin-bottom:4px;text-transform:uppercase}
+  .row{display:flex;justify-content:space-between;padding:2px 0;font-size:11px}
+  .row .k{color:var(--dim)} .row .v{color:var(--ink)}
+  .row.good .v{color:var(--good)} .row.warn .v{color:var(--amber)} .row.bad .v{color:var(--red)}
+  /* ---------------- left: branches + controls ---------------- */
+  #left .branch{display:flex;align-items:center;gap:6px;padding:5px 6px;cursor:pointer;border:1px solid transparent}
+  #left .branch:hover{background:rgba(60,72,66,.4)}
+  #left .branch.sel{border-color:var(--amber);background:rgba(120,86,30,.18)}
+  #left .branch .nm{flex:1;color:var(--ink)}
+  #left .branch .cnt{color:var(--dim);font-size:10px}
+  #left .branch .pr{flex:0 0 auto}
+  .pribtns{display:inline-flex;border:1px solid var(--hair)}
+  .pribtns button{background:rgba(40,48,44,.6);color:var(--dim);border:none;border-right:1px solid var(--hair);
+    cursor:pointer;font-family:inherit;font-size:10px;padding:2px 5px;line-height:1}
+  .pribtns button:last-child{border-right:none}
+  .pribtns button.on{color:#0b0d0c;font-weight:bold}
+  .pribtns button.on[data-p=High]{background:var(--good)}
+  .pribtns button.on[data-p=Med]{background:var(--amber)}
+  .pribtns button.on[data-p=Low]{background:var(--dim)}
+  .stepper{display:flex;align-items:center;gap:6px;margin:5px 0}
+  .stepper .nm{flex:1;color:var(--ink)}
+  .sbtn{width:24px;height:24px;background:rgba(40,48,44,.7);border:1px solid var(--hair);
+    color:var(--amber);cursor:pointer;font-size:14px;line-height:1}
+  .sbtn:hover{background:rgba(60,72,66,.8)}
+  .sval{min-width:56px;text-align:center;color:var(--ink)}
+  .bigbtn{display:block;width:100%;margin-top:8px;padding:9px;background:rgba(120,86,30,.2);
+    border:1px solid var(--amber);color:var(--amber);font-family:inherit;font-weight:bold;
+    letter-spacing:.18em;font-size:12px;cursor:pointer}
+  .bigbtn:hover{background:rgba(120,86,30,.4);color:var(--ink)}
+  .bar{height:6px;background:rgba(80,90,85,.22);margin:4px 0;position:relative;border:1px solid var(--hair)}
+  .bar>i{position:absolute;inset:0 auto 0 0;background:var(--teal)}
+  /* ---------------- centre: tech tree ---------------- */
+  #treeHdr{display:flex;align-items:center;gap:14px}
+  #treeHdr .ttl{color:var(--amber);font-size:11px;letter-spacing:.22em;font-weight:bold;text-transform:uppercase}
+  #treeHdr .leg{margin-left:auto;display:flex;gap:12px;font-size:9.5px;color:var(--dim);letter-spacing:.05em}
+  #treeHdr .leg span{display:flex;align-items:center;gap:4px}
+  #treeHdr .leg i{width:9px;height:9px;display:inline-block;border:1px solid rgba(120,140,130,.3)}
+  #cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:10px;padding:10px}
+  .col .colhdr{color:var(--teal);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    padding:3px 4px 5px;border-bottom:1px solid var(--hair);margin-bottom:6px;display:flex;justify-content:space-between}
+  .col .colhdr .pr{font-size:9px;color:var(--dim)}
+  .tech{border:1px solid var(--hair);padding:6px 8px;margin-bottom:6px;cursor:pointer;
+    border-left:3px solid var(--dim);background:rgba(20,26,23,.4)}
+  .tech:hover{background:rgba(40,48,44,.5)}
+  .tech.s-done{border-left-color:var(--good);opacity:.78}
+  .tech.s-prog{border-left-color:var(--amber);background:rgba(120,86,30,.12)}
+  .tech.s-avail{border-left-color:var(--ink)}
+  .tech.s-locked{border-left-color:var(--dim);opacity:.45;cursor:not-allowed}
+  .tech.funded{box-shadow:inset 0 0 0 1px rgba(176,130,44,.5)}
+  .tech .th{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+  .tech .nm{color:var(--ink);font-size:11.5px}
+  .tech.s-done .nm{color:var(--good)} .tech.s-locked .nm{color:var(--dim)}
+  .tech .yr{color:var(--dim);font-size:10px;flex:0 0 auto}
+  .tech .meta{display:flex;gap:10px;font-size:9.5px;color:var(--dim);margin-top:3px}
+  .tech .meta b{color:var(--teal);font-weight:normal}
+  .tech .eff{color:var(--dim);font-size:10px;line-height:1.4;margin-top:3px}
+  .tech .st{font-size:9px;letter-spacing:.12em;font-weight:bold;text-transform:uppercase}
+  .st-done{color:var(--good)} .st-prog{color:var(--amber)} .st-avail{color:var(--ink)} .st-locked{color:var(--dim)}
+  .tech .unl{color:var(--orange);font-size:9.5px;margin-top:3px;line-height:1.4}
+  .pbar{height:5px;background:rgba(80,90,85,.22);margin:5px 0 2px;position:relative;border:1px solid var(--hair)}
+  .pbar>i{position:absolute;inset:0 auto 0 0;background:var(--amber)}
+  .pbar.done>i{background:var(--good)}
+  .fundbtn{display:inline-block;margin-top:4px;padding:2px 8px;border:1px solid var(--teal);
+    color:var(--teal);font-size:9px;letter-spacing:.1em;cursor:pointer;background:transparent}
+  .fundbtn:hover{background:rgba(62,122,116,.2)}
+  .fundbtn.on{background:var(--amber);border-color:var(--amber);color:#0b0d0c;font-weight:bold}
+  /* ---------------- right: summary + unlocks ---------------- */
+  #right .eraband{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+  #right .era{padding:3px 6px;border:1px solid var(--hair);font-size:9.5px;color:var(--dim);display:flex;justify-content:space-between}
+  #right .era.cur{border-color:var(--amber);background:rgba(120,86,30,.16);color:var(--ink)}
+  #right .era .yrs{color:var(--dim);font-size:9px}
+  .unlock{padding:3px 6px;border:1px solid var(--hair);margin-bottom:4px;font-size:10px}
+  .unlock .un{color:var(--ink)} .unlock .uy{color:var(--dim);font-size:9px}
+  .unlock .ut{color:var(--teal);font-size:9px;letter-spacing:.06em}
+  .unlock.new{border-color:var(--good);background:rgba(111,158,106,.1)}
+  .ulgroup{margin-bottom:8px}
+  .ulgroup .gh{color:var(--amber);font-size:9.5px;letter-spacing:.1em;margin-bottom:3px;text-transform:uppercase}
+  .log{font-size:10px;line-height:1.5;color:var(--dim);max-height:160px;overflow-y:auto}
+  .log .e{margin-bottom:2px} .log .e.win{color:var(--good)} .log .e.skip{color:var(--dim)} .log .e.adv{color:var(--amber)}
+  #scan{position:fixed;inset:0;pointer-events:none;z-index:30;opacity:.04;
+    background:repeating-linear-gradient(0deg,transparent 0 2px,#000 3px)}
+  ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:rgba(120,140,130,.25)}
+  @media(max-width:1100px){#wrap{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="scan"></div>
+<div id="top">
+  <span class="t">CITY BATTLE</span><span class="dim">// TECH DEVELOPMENT &mdash; RESEARCH BUREAU</span>
+  <span class="nav">
+    <a href="../index.html">&larr; TACTICAL MAP</a>
+    <a href="../designer/index.html">CRAB FOUNDRY</a>
+    <a href="../hub.html">HUB</a>
+  </span>
+  <span class="r">RESEARCH YEAR <b id="yearLbl">2025</b></span>
+</div>
+
+<div id="wrap">
+  <!-- ============== LEFT: branches + sim controls ============== -->
+  <div class="panel" id="left">
+    <div class="hdr">Research Year</div>
+    <div class="grp">
+      <div class="stepper">
+        <span class="nm">calendar</span>
+        <button class="sbtn" id="yrDown">&minus;</button>
+        <span class="sval" id="yrShow">2025</span>
+        <button class="sbtn" id="yrUp">+</button>
+      </div>
+      <button class="bigbtn" id="advBtn">&gt;&gt; ADVANCE YEAR</button>
+      <div class="row" style="margin-top:6px"><span class="k">RP / year (base)</span><span class="v" id="rpBase">150</span></div>
+      <div class="stepper">
+        <span class="nm">budget &plusmn;</span>
+        <button class="sbtn" id="rpDown">&minus;</button>
+        <span class="sval" id="rpShow">150</span>
+        <button class="sbtn" id="rpUp">+</button>
+      </div>
+      <div class="row"><span class="k">funded this turn</span><span class="v" id="rpFunded">0</span></div>
+      <div class="bar" id="rpBar"><i style="width:0%"></i></div>
+    </div>
+    <div class="hdr">Branches &amp; Priority</div>
+    <div class="grp" id="branchList"></div>
+    <div class="hdr">Auto / Tools</div>
+    <div class="grp">
+      <button class="bigbtn" id="autoBtn" style="margin-top:0;background:rgba(62,122,116,.18);border-color:var(--teal);color:var(--teal)">AUTO-FUND BY PRIORITY</button>
+      <button class="bigbtn" id="run5Btn" style="margin-top:6px;background:rgba(62,122,116,.18);border-color:var(--teal);color:var(--teal)">&gt;&gt; RUN 5 YEARS</button>
+      <button class="bigbtn" id="resetBtn" style="margin-top:6px;background:rgba(154,58,51,.16);border-color:var(--red);color:var(--red)">RESET CAMPAIGN</button>
+      <div class="lbl" style="margin-top:8px;line-height:1.5">Year-gated stochastic research (RtW model). Fund a tech, then ADVANCE: each funded available tech rolls its chance% to progress; RP accumulates toward cost.</div>
+    </div>
+  </div>
+
+  <!-- ============== CENTRE: tech tree ============== -->
+  <div class="panel" id="centre">
+    <div class="hdr" id="treeHdr">
+      <span class="ttl" id="treeTitle">TECH TREE</span>
+      <span class="leg">
+        <span><i style="background:var(--good)"></i>DONE</span>
+        <span><i style="background:var(--amber)"></i>FUNDED</span>
+        <span><i style="background:var(--ink)"></i>AVAILABLE</span>
+        <span><i style="background:var(--dim)"></i>LOCKED</span>
+      </span>
+    </div>
+    <div id="cols"></div>
+  </div>
+
+  <!-- ============== RIGHT: summary + unlocks ============== -->
+  <div class="panel" id="right">
+    <div class="hdr">Summary</div>
+    <div class="grp" id="summary"></div>
+    <div class="hdr">Era Curve</div>
+    <div class="grp"><div class="eraband" id="eraBand"></div></div>
+    <div class="hdr">Unlocked &mdash; available now</div>
+    <div class="grp" id="unlocks"></div>
+    <div class="hdr">Research Log</div>
+    <div class="grp"><div class="log" id="log"></div></div>
+  </div>
+</div>
+
+<script src="tech.js"></script>
+</body>
+</html>

@@ -82,7 +82,19 @@
   var windGroup = null, rainGroup = null, suburbGroup = null;
   var units = [], selected = null;
   var show = { los: true, range: true, bld: true, wire: false, wind: false, rain: false,
-               suburbs: QS.get("suburbs") === "1", fogcull: QS.get("fogcull") === "1" };
+               suburbs: QS.get("suburbs") === "1", fogcull: QS.get("fogcull") === "1",
+               fire: false };
+
+  // ---- FIRE ANALYSIS state ----
+  // trajectory mode: "direct" (flat, lots of dead space) | "oblique" (arced howitzer, less)
+  //                  | "mortar" (near-vertical, almost none)
+  var fireMode = "direct";
+  var fireQS = QS.get("fire");           // ?fire=direct|oblique|mortar force-enables for screenshots
+  if (fireQS === "direct" || fireQS === "oblique" || fireQS === "mortar") {
+    show.fire = true; fireMode = fireQS; show.los = false;   // fire shading replaces plain viewshed
+  }
+  var fireGroup = null;                   // overlay group for min/max + immunity rings
+  var lastFireStats = null;               // {reachPct, deadPct, ...} last computed
 
   // ---- FLY CAMERA state ----
   var fly = {
@@ -152,11 +164,11 @@
   }
 
   function clearScene() {
-    [terrainMesh, buildingsGroup, unitsGroup, overlayGroup, wireMesh, windGroup, rainGroup, suburbGroup].forEach(function (o) {
+    [terrainMesh, buildingsGroup, unitsGroup, overlayGroup, wireMesh, windGroup, rainGroup, suburbGroup, fireGroup].forEach(function (o) {
       if (o) { scene.remove(o); }
     });
     terrainMesh = buildingsGroup = unitsGroup = overlayGroup = wireMesh = null;
-    windGroup = rainGroup = suburbGroup = null;
+    windGroup = rainGroup = suburbGroup = fireGroup = null;
     buildingMeshes = []; buildingChunks = [];
     units = []; selected = null;
     document.getElementById("unit").style.display = "none";
@@ -742,6 +754,236 @@
   }
   function fogFactor() { return fog; }
   var fog = 1.0; // 1 = clear, lower = foggier
+
+  // ===========================================================================
+  // FIRE ANALYSIS  — trajectory-aware "what can this gun HIT" terrain shading.
+  // Teaches the ATP 3-21.90 Fig 5-1 dead-space lesson: a FLAT (direct) gun leaves a
+  // large unhittable pocket behind every crest; a HOWITZER (oblique) less; a MORTAR
+  // (near-vertical high-angle) almost none. We test each terrain vertex against the
+  // chosen trajectory and colour it green (hittable), red (dead space), or grey
+  // (out of range), driving the same per-vertex colour attribute the viewshed uses.
+  // ===========================================================================
+
+  // Muzzle speed implied by a unit's max range (vacuum flat-fire max = v^2/g, matches
+  // Ballistics.MaxRange in the game). v = sqrt(rangeM * g).
+  function muzzleSpeed(rangeM) { return Math.sqrt(Math.max(1, rangeM) * 9.81); }
+
+  // Per-trajectory tuning.  min-range fraction = inner dead zone for high-angle lobbers.
+  function trajParams(mode) {
+    if (mode === "mortar")  return { minFrac: 0.06, reachMul: 1.00, high: true,  arcGain: 1.10, label: "MORTAR / HIGH-ANGLE" };
+    if (mode === "oblique") return { minFrac: 0.02, reachMul: 0.96, high: true,  arcGain: 0.07, label: "OBLIQUE / INDIRECT" };
+    return                         { minFrac: 0.00, reachMul: 0.90, high: false, arcGain: 0.00, label: "DIRECT / FLAT" };
+  }
+
+  // Can a shell of muzzle speed v, fired on the chosen arc, reach (clear all intervening
+  // terrain to) the target cell?  Returns true = hittable.
+  //   DIRECT  : flat LOS must be clear (exactly the viewshed test) -> big dead space.
+  //   OBLIQUE : parabolic arc rising then falling; terrain must stay UNDER the arc. The arc
+  //             apex is raised by arcGain so it clears low ridges the flat shot can't, but a
+  //             tall close mask still blocks it -> some dead space remains.
+  //   MORTAR  : near-vertical plunge; only the launch corridor near the gun + the cell column
+  //             matter, so almost nothing masks it -> dead space ~ 0 (only min/max range).
+  function canHit(ex, ez, ey, tx, tz, ty, res, H, cell, rz, v, p) {
+    var dx = tx - ex, dz = tz - ez;
+    var horiz = Math.hypot(dx, dz);
+    if (horiz < cell) return true;
+
+    if (!p.high) {
+      // DIRECT: straight line of sight from muzzle to target top.
+      return losGrid(ex, ez, ey, tx, tz, ty, res, H, cell, rz);
+    }
+
+    // Indirect arc. Build a parabola from (0,ey) to (horiz,ty). The apex height above the
+    // straight chord is scaled by arcGain * (a fraction of horizontal range) so higher arcs
+    // (mortar) bow up much more and clear masks; the flatter oblique bows less.
+    // arc(t) = chord(t) + bow * 4t(1-t),  with bow proportional to range & gain.
+    var chord0 = ey, chord1 = ty;
+    var bow = p.arcGain * horiz * 0.5;          // metres of extra apex height over the chord
+    // mortar: huge bow so the descending leg is near-vertical over the target — almost no
+    // intervening terrain can be higher than the arc except right at the gun.
+    var steps = Math.min(180, Math.max(4, Math.ceil(horiz / cell)));
+    for (var i = 1; i < steps; i++) {
+      var t = i / steps;
+      var sx = ex + dx * t, sz = ez + dz * t;
+      var fx = clamp(sx / cell, 0, res - 1.001), fz = clamp(sz / rz, 0, res - 1.001);
+      var x0 = Math.floor(fx), z0 = Math.floor(fz), txf = fx - x0, tzf = fz - z0;
+      var a = H[z0*res+x0]*(1-txf)+H[z0*res+x0+1]*txf;
+      var c = H[(z0+1)*res+x0]*(1-txf)+H[(z0+1)*res+x0+1]*txf;
+      var gy = a*(1-tzf)+c*tzf;                 // terrain height under the arc at t
+      var arcY = chord0 + (chord1 - chord0) * t + bow * 4 * t * (1 - t);
+      if (gy > arcY + 2) return false;          // terrain pokes through the trajectory -> masked
+    }
+    return true;
+  }
+
+  // Colour the terrain by hittability for the selected unit + current trajectory mode.
+  // Also computes dead-space % over in-range cells and stashes it for the readout.
+  function computeFireAnalysis(u) {
+    var t = map.terrain, res = t.res, H = t.heights, cell = t.cell_m;
+    var colors = terrainMesh.geometry.attributes.color;
+    var d = u.userData;
+    var p = trajParams(fireMode);
+    var maxR = (d.rangeM > 0 ? d.rangeM : 14000) * p.reachMul * fogFactor();
+    var minR = maxR * p.minFrac;
+    var v = muzzleSpeed(d.rangeM > 0 ? d.rangeM : 14000);
+    var ex = d.x, ez = d.z, ey = d.eye + 8;
+    var rz = (map.size_m[1] / (res - 1));
+
+    var inRange = 0, hit = 0;
+    for (var zi = 0; zi < res; zi++) {
+      for (var xi = 0; xi < res; xi++) {
+        var idx = zi * res + xi;
+        var wx = xi * cell, wz = zi * rz;
+        var dist = Math.hypot(wx - ex, wz - ez);
+        var r, gg, bb;
+        if (dist > maxR || dist < minR) {
+          // out of range (beyond max OR inside high-angle min dead zone) -> shaded grey
+          r = 0.30; gg = 0.33; bb = 0.36;
+        } else {
+          inRange++;
+          var ok = canHit(ex, ez, ey, wx, wz, H[idx] + 1, res, H, cell, rz, v, p);
+          if (ok) {
+            hit++;
+            // hittable: cool muted GREEN, brighter when nearer (better accuracy/cert.)
+            var near = clamp(1 - dist / maxR, 0, 1);
+            r = 0.40 + near * 0.18; gg = 0.78 + near * 0.30; bb = 0.46 + near * 0.16;
+          } else {
+            // DEAD SPACE: cannot be hit with this trajectory -> red tint (still readable)
+            r = 1.05; gg = 0.36; bb = 0.33;
+          }
+        }
+        colors.setXYZ(idx, r, gg, bb);
+      }
+    }
+    colors.needsUpdate = true;
+
+    var deadPct = inRange > 0 ? Math.round((1 - hit / inRange) * 100) : 0;
+    lastFireStats = { mode: fireMode, label: p.label, deadPct: deadPct,
+                      inRange: inRange, hit: hit, maxR: maxR, minR: minR };
+    return lastFireStats;
+  }
+
+  // min/max range rings + (optional) immunity-zone band vs a reference enemy gun.
+  function buildFireRings(u) {
+    if (fireGroup) { scene.remove(fireGroup); fireGroup = null; }
+    if (!show.fire || !u) return;
+    fireGroup = new THREE.Group(); scene.add(fireGroup);
+    var d = u.userData;
+    var p = trajParams(fireMode);
+    var maxR = (d.rangeM > 0 ? d.rangeM : 14000) * p.reachMul * fogFactor();
+    var minR = maxR * p.minFrac;
+
+    function ring(rad, col, op) {
+      if (rad <= 0) return;
+      var pts = [], segs = 110;
+      for (var i = 0; i <= segs; i++) {
+        var a = i / segs * Math.PI * 2;
+        var rx = clamp(d.x + Math.cos(a) * rad, 0, map.size_m[0]);
+        var rz = clamp(d.z + Math.sin(a) * rad, 0, map.size_m[1]);
+        pts.push(new THREE.Vector3(rx, heightAt(rx, rz) + 5, rz));
+      }
+      fireGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: op })));
+    }
+    ring(maxR, COL.range, 0.7);                 // max range
+    if (minR > 0) ring(minR, COL.hostile, 0.6); // high-angle inner dead zone
+
+    // IMMUNITY ZONE band vs a reference enemy gun (approximate, teaching aid):
+    //   inner edge  = range beyond which enemy SIDE (vertical) pen <= our side armour
+    //   outer edge  = range beyond which enemy TOP (plunging) pen  >  our top armour
+    // We model these as fractions of the enemy gun's reach. Band between = immune.
+    var enemy = units.filter(function (g) { return g.userData.side === "hostile" && g.userData.rangeM > 0; })[0];
+    if (enemy) {
+      var er = enemy.userData.rangeM;
+      var innerEdge = er * 0.34;   // closer than this -> our side is defeated (short-range vertical pen)
+      var outerEdge = er * 0.82;   // farther than this -> our deck is defeated (long-range plunging pen)
+      if (outerEdge > innerEdge) {
+        // tint the immune band with a faint amber filled ring (two arcs) centred on us.
+        var g2 = new THREE.RingGeometry(innerEdge, outerEdge, 96, 1);
+        g2.rotateX(-Math.PI / 2);
+        var mband = new THREE.Mesh(g2, new THREE.MeshBasicMaterial({
+          color: COL.range, transparent: true, opacity: 0.10, side: THREE.DoubleSide, depthWrite: false }));
+        mband_place(mband, d);
+        fireGroup.add(mband);
+        ring(innerEdge, COL.range, 0.35);
+        ring(outerEdge, COL.range, 0.35);
+      }
+    }
+  }
+  function mband_place(mesh, d) {
+    mesh.position.set(d.x, heightAt(d.x, d.z) + 3, d.z);
+  }
+
+  // Update the FIRE ANALYSIS readout panel + legend.
+  function updateFireReadout(u) {
+    var panel = document.getElementById("fire");
+    if (!panel) return;
+    if (!show.fire || !u) { panel.style.display = "none"; return; }
+    panel.style.display = "block";
+    var d = u.userData, s = lastFireStats || {};
+    document.getElementById("fUnit").textContent = d.name;
+    document.getElementById("fMode").textContent = s.label || fireMode.toUpperCase();
+    var maxKm = (s.maxR || 0) / 1000, minKm = (s.minR || 0) / 1000;
+    document.getElementById("fReach").textContent =
+      (minKm > 0.1 ? minKm.toFixed(1) + "-" : "0-") + maxKm.toFixed(1) + " km";
+    var dp = (s.deadPct != null ? s.deadPct : 0);
+    document.getElementById("fDeadPct").textContent = dp + "%";
+    document.getElementById("fDeadBar").style.width = dp + "%";
+    var hint = (fireMode === "mortar")
+      ? "High-angle plunges straight into defilade — almost no dead space."
+      : (fireMode === "oblique")
+        ? "Arced fire clears low ridges; tall close masks still leave dead space."
+        : "Flat fire is blocked by every crest — large dead-space pockets behind hills.";
+    document.getElementById("fHint").textContent = hint;
+
+    // angle-of-fall: prefer selected enemy; else nearest enemy crab to this unit.
+    var target = null;
+    if (selected && selected.userData.side === "hostile") target = selected;
+    if (!target) {
+      var best = Infinity;
+      for (var i = 0; i < units.length; i++) {
+        var o = units[i].userData;
+        if (o.side !== "hostile") continue;
+        var dd = Math.hypot(o.x - d.x, o.z - d.z);
+        if (dd < best) { best = dd; target = units[i]; }
+      }
+    }
+    var aofEl = document.getElementById("fAof"), noteEl = document.getElementById("fAofNote");
+    if (target && target !== u) {
+      var a = angleOfFall(u, target);
+      aofEl.textContent = "RANGE " + (a.rng / 1000).toFixed(1) + "km \u00b7 " +
+        a.fall.toFixed(0) + "\u00b0 \u00b7 " + (a.flat ? "FLAT" : "PLUNGING");
+      aofEl.className = a.deck ? "k" : "warn";
+      noteEl.textContent = "hits " + a.face + (a.deck
+        ? " (top/carapace \u2014 plunging penetration)"
+        : " (side/glacis \u2014 vertical penetration)") + " \u00b7 vs " + target.userData.name;
+    } else {
+      aofEl.textContent = "--"; aofEl.className = "k";
+      noteEl.textContent = "no enemy crab in theatre";
+    }
+  }
+
+  // Angle-of-fall readout for a (selected/hovered) enemy at the current trajectory.
+  // Angle of fall rises with range and is steep for high-angle fire. Shallow -> SIDE; steep -> DECK.
+  function angleOfFall(u, target) {
+    var d = u.userData, o = target.userData;
+    var rng = Math.hypot(o.x - d.x, o.z - d.z);
+    var maxR = d.rangeM > 0 ? d.rangeM : 14000;
+    var p = trajParams(fireMode);
+    // vacuum: angle of fall for flat (low) arc grows toward 45deg near max range; high arc much steeper.
+    var frac = clamp(rng / maxR, 0, 1.4);
+    var fall;
+    if (p.high) {
+      // high/oblique arc descends steeply; mortar near-vertical.
+      fall = (fireMode === "mortar") ? (70 + frac * 18) : (40 + frac * 28);
+    } else {
+      fall = 8 + frac * 34;          // flat fire: shallow near, ~42deg toward max range
+    }
+    fall = clamp(fall, 4, 88);
+    var deck = fall >= 45;
+    return { rng: rng, fall: fall, deck: deck,
+             face: deck ? "DECK" : "SIDE", flat: fall < 30 };
+  }
   function slopeAt(H, res, x, z, cell) {
     var xl = Math.max(0, x - 1), xr = Math.min(res - 1, x + 1);
     var zd = Math.max(0, z - 1), zu = Math.min(res - 1, z + 1);
@@ -830,8 +1072,16 @@
     if (!u) { clearViewshed(); return; }
     var d = u.userData;
 
-    // VIEWSHED light-cast: highlight everything this unit can see.
-    if (show.los) computeViewshed(u); else clearViewshed();
+    // FIRE ANALYSIS takes over the terrain shading when active (replaces plain viewshed).
+    if (show.fire) {
+      computeFireAnalysis(u);
+      buildFireRings(u);
+      updateFireReadout(u);
+    } else {
+      if (fireGroup) { scene.remove(fireGroup); fireGroup = null; }
+      // VIEWSHED light-cast: highlight everything this unit can see.
+      if (show.los) computeViewshed(u); else clearViewshed();
+    }
 
     // FOG-CULL LOD: dim/hide buildings outside this unit's sight (recompute on selection change).
     applyFogCull();
@@ -920,6 +1170,35 @@
     document.getElementById("tSub").classList.toggle("on", show.suburbs);
     document.getElementById("tFogCull").classList.toggle("on", show.fogcull);
     document.getElementById("tFly").onclick = function () { setFly(!fly.on); };
+
+    // ---- FIRE ANALYSIS toggles ----
+    function syncFireUI() {
+      document.getElementById("tFire").classList.toggle("on", show.fire);
+      document.getElementById("fireTraj").style.display = show.fire ? "flex" : "none";
+      document.getElementById("fireLeg").style.display  = show.fire ? "block" : "none";
+      ["fDirect","fOblique","fMortar"].forEach(function (id) {
+        var m = id === "fDirect" ? "direct" : id === "fOblique" ? "oblique" : "mortar";
+        document.getElementById(id).classList.toggle("on", fireMode === m);
+      });
+      // LOS toggle reflects that fire-analysis suppresses the plain viewshed
+      document.getElementById("tLOS").classList.toggle("on", show.los && !show.fire);
+    }
+    document.getElementById("tFire").onclick = function () {
+      show.fire = !show.fire;
+      if (show.fire) { show.los = false; }            // fire shading replaces viewshed
+      else { show.los = true; }
+      document.getElementById("fire").style.display = show.fire ? "block" : "none";
+      syncFireUI(); rebuildOverlays();
+    };
+    function setTraj(m) {
+      fireMode = m;
+      if (!show.fire) { show.fire = true; show.los = false; document.getElementById("fire").style.display = "block"; }
+      syncFireUI(); rebuildOverlays();
+    }
+    document.getElementById("fDirect").onclick  = function () { setTraj("direct"); };
+    document.getElementById("fOblique").onclick = function () { setTraj("oblique"); };
+    document.getElementById("fMortar").onclick  = function () { setTraj("mortar"); };
+    syncFireUI();
     var vS = document.getElementById("vShaded"), vE = document.getElementById("vElev");
     vS.classList.toggle("on", viewMode === "shaded"); vE.classList.toggle("on", viewMode === "elevation");
     vS.onclick = function () { viewMode = "shaded"; vS.classList.add("on"); vE.classList.remove("on"); recolorTerrain(); };

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CITY BATTLE // HIGH COMMAND</title>
+<style>
+  :root{
+    --bg:#0b0d0c; --panel:rgba(13,17,16,.86); --hair:rgba(120,140,130,.16);
+    --ink:#9eb0a5; --dim:#5d6d64; --amber:#b0822c; --orange:#9e5420;
+    --red:#9a3a33; --teal:#3e7a74; --good:#6f9e6a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;min-height:100%;background:var(--bg);
+    font-family:"DejaVu Sans Mono",ui-monospace,Consolas,monospace;color:var(--ink);font-size:12px}
+  body{overflow-y:auto}
+  /* ---------------- top nav ---------------- */
+  #top{position:sticky;top:0;left:0;right:0;height:30px;display:flex;align-items:center;gap:16px;
+    padding:0 14px;background:var(--panel);border-bottom:1px solid var(--hair);z-index:20}
+  #top .t{color:var(--orange);font-weight:bold;letter-spacing:.3em;font-size:13px}
+  #top .dim{color:var(--dim)}
+  #top .nav{display:flex;align-items:center}
+  #top .nav a{color:var(--dim);text-decoration:none;letter-spacing:.1em;margin-left:14px}
+  #top .nav a:hover{color:var(--amber)}
+  #top .r{margin-left:auto;color:var(--dim);letter-spacing:.1em}
+  #top .r b{color:var(--amber)}
+  /* ---------------- layout ---------------- */
+  #wrap{display:grid;grid-template-columns:288px 1fr 320px;gap:10px;padding:10px;align-items:start}
+  .panel{background:var(--panel);border:1px solid var(--hair)}
+  .hdr{color:var(--amber);font-size:11px;letter-spacing:.22em;font-weight:bold;
+    text-transform:uppercase;padding:8px 12px 5px;border-bottom:1px solid var(--hair);
+    display:flex;justify-content:space-between;align-items:center}
+  .hdr .sub{color:var(--dim);font-size:9px;letter-spacing:.1em;font-weight:normal}
+  .grp{padding:8px 12px;border-bottom:1px solid var(--hair)}
+  .lbl{color:var(--dim);font-size:10px;letter-spacing:.08em;margin-bottom:4px;text-transform:uppercase}
+  .row{display:flex;justify-content:space-between;padding:2px 0;font-size:11px}
+  .row .k{color:var(--dim)} .row .v{color:var(--ink)}
+  .row.good .v{color:var(--good)} .row.warn .v{color:var(--amber)} .row.bad .v{color:var(--red)}
+  .bar{height:7px;background:rgba(80,90,85,.22);margin:4px 0;position:relative;border:1px solid var(--hair)}
+  .bar>i{position:absolute;inset:0 auto 0 0;background:var(--teal);transition:width .3s}
+  .bar.amber>i{background:var(--amber)} .bar.good>i{background:var(--good)}
+  .bar.red>i{background:var(--red)} .bar.orange>i{background:var(--orange)}
+  /* buttons */
+  .bigbtn{display:block;width:100%;margin-top:8px;padding:10px;background:rgba(120,86,30,.2);
+    border:1px solid var(--amber);color:var(--amber);font-family:inherit;font-weight:bold;
+    letter-spacing:.18em;font-size:12px;cursor:pointer}
+  .bigbtn:hover{background:rgba(120,86,30,.4);color:var(--ink)}
+  .bigbtn.teal{background:rgba(62,122,116,.18);border-color:var(--teal);color:var(--teal)}
+  .bigbtn.teal:hover{background:rgba(62,122,116,.35);color:var(--ink)}
+  .bigbtn.red{background:rgba(154,58,51,.16);border-color:var(--red);color:var(--red)}
+  .bigbtn.red:hover{background:rgba(154,58,51,.32);color:var(--ink)}
+  .sbtn{width:24px;height:24px;background:rgba(40,48,44,.7);border:1px solid var(--hair);
+    color:var(--amber);cursor:pointer;font-size:14px;line-height:1}
+  .sbtn:hover{background:rgba(60,72,66,.8)}
+  .stepper{display:flex;align-items:center;gap:6px;margin:4px 0}
+  .stepper .nm{flex:1;color:var(--ink)}
+  .sval{min-width:48px;text-align:center;color:var(--ink)}
+  select,input[type=text]{background:#10130f;color:var(--ink);border:1px solid var(--hair);
+    font-family:inherit;font-size:11px;padding:5px;width:100%}
+  /* prestige hero meter */
+  .hero{padding:10px 12px}
+  .heroval{font-size:30px;font-weight:bold;letter-spacing:.04em;line-height:1}
+  .heroval.good{color:var(--good)} .heroval.warn{color:var(--amber)} .heroval.bad{color:var(--red)}
+  .herolbl{color:var(--dim);font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px}
+  .bigbar{height:16px;background:rgba(80,90,85,.2);position:relative;border:1px solid var(--hair);margin:6px 0}
+  .bigbar>i{position:absolute;inset:0 auto 0 0;background:var(--good);transition:width .35s}
+  .bigbar.warn>i{background:var(--amber)} .bigbar.bad>i{background:var(--red)}
+  .delta{font-size:10px;letter-spacing:.04em}
+  .delta.up{color:var(--good)} .delta.down{color:var(--red)}
+  /* tension list */
+  .tnrow{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px}
+  .tnrow .nm{flex:0 0 118px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tnrow .tb{flex:1;height:9px;background:rgba(80,90,85,.2);position:relative;border:1px solid var(--hair)}
+  .tnrow .tb>i{position:absolute;inset:0 auto 0 0}
+  .tnrow .tv{flex:0 0 56px;text-align:right;color:var(--dim);font-size:10px}
+  .tnrow.war .nm{color:var(--red);font-weight:bold} .tnrow.war .tv{color:var(--red)}
+  .tnrow.near .tv{color:var(--amber)}
+  /* production / roster items */
+  .item{border:1px solid var(--hair);padding:6px 8px;margin-bottom:6px;background:rgba(20,26,23,.4)}
+  .item .ih{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+  .item .nm{color:var(--ink);font-size:11.5px} .item .cls{color:var(--teal);font-size:9.5px;letter-spacing:.08em}
+  .item .meta{display:flex;gap:10px;font-size:9.5px;color:var(--dim);margin-top:3px}
+  .pbar{height:5px;background:rgba(80,90,85,.22);margin:5px 0 2px;position:relative;border:1px solid var(--hair)}
+  .pbar>i{position:absolute;inset:0 auto 0 0;background:var(--amber)}
+  .item.ready{border-color:var(--good)} .item.ready .nm{color:var(--good)}
+  .roster .item{border-left:3px solid var(--good);background:rgba(20,26,23,.3)}
+  .roster .item.lost{border-left-color:var(--red);opacity:.5}
+  .roster .item.lost .nm{color:var(--red);text-decoration:line-through}
+  /* events / missions modal-ish cards */
+  .card{border:1px solid var(--amber);background:rgba(120,86,30,.1);padding:10px 12px;margin:8px 12px}
+  .card.mission{border-color:var(--teal);background:rgba(62,122,116,.1)}
+  .card .ct{color:var(--amber);font-size:11px;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;margin-bottom:4px}
+  .card.mission .ct{color:var(--teal)}
+  .card .cd{color:var(--ink);font-size:11px;line-height:1.5;margin-bottom:8px}
+  .choice{display:block;width:100%;text-align:left;padding:7px 10px;margin-top:5px;
+    background:rgba(40,48,44,.5);border:1px solid var(--hair);color:var(--ink);
+    font-family:inherit;font-size:11px;cursor:pointer;line-height:1.4}
+  .choice:hover{background:rgba(60,72,66,.7);border-color:var(--amber)}
+  .choice .eff{color:var(--dim);font-size:9.5px;margin-top:2px}
+  .choice .eff .p{color:var(--good)} .choice .eff .n{color:var(--red)}
+  .nochoice{color:var(--dim);font-size:10px;padding:14px 12px;line-height:1.5}
+  /* log */
+  .log{font-size:10px;line-height:1.55;color:var(--dim);max-height:230px;overflow-y:auto}
+  .log .e{margin-bottom:2px;border-bottom:1px solid rgba(120,140,130,.06);padding-bottom:2px}
+  .log .e.win{color:var(--good)} .log .e.bad{color:var(--red)} .log .e.adv{color:var(--amber)}
+  .log .e.ev{color:var(--teal)} .log .e .d{color:var(--dim);font-size:9px}
+  .vpwrap{display:flex;gap:10px;align-items:center;margin-top:4px}
+  .vpwrap .side{flex:1;text-align:center;border:1px solid var(--hair);padding:5px}
+  .vpwrap .side .v{font-size:18px;font-weight:bold;color:var(--good)}
+  .vpwrap .side.enemy .v{color:var(--red)}
+  .vpwrap .side .l{font-size:9px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase}
+  .vpwrap .vs{color:var(--dim);font-size:10px}
+  .pill{display:inline-block;padding:1px 6px;border:1px solid var(--hair);font-size:9px;letter-spacing:.08em;
+    color:var(--dim);margin-right:4px}
+  .pill.war{border-color:var(--red);color:var(--red)}
+  .traitline{color:var(--teal);font-size:10px;line-height:1.5;margin-top:3px}
+  .gameover{position:fixed;inset:0;background:rgba(8,5,5,.92);z-index:60;display:none;
+    flex-direction:column;align-items:center;justify-content:center;text-align:center}
+  .gameover.show{display:flex}
+  .gameover .big{color:var(--red);font-size:34px;font-weight:bold;letter-spacing:.18em}
+  .gameover .sm{color:var(--ink);font-size:13px;margin-top:12px;line-height:1.7;max-width:520px}
+  #scan{position:fixed;inset:0;pointer-events:none;z-index:30;opacity:.04;
+    background:repeating-linear-gradient(0deg,transparent 0 2px,#000 3px)}
+  ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:rgba(120,140,130,.25)}
+  @media(max-width:1180px){#wrap{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="scan"></div>
+<div id="top">
+  <span class="t">CITY BATTLE</span><span class="dim">// HIGH COMMAND &mdash; STRATEGIC OPERATIONS</span>
+  <span class="nav">
+    <a href="../index.html">&larr; TACTICAL MAP</a>
+    <a href="../designer/index.html">FOUNDRY</a>
+    <a href="../tech/index.html">RESEARCH</a>
+    <a href="../hub.html">HUB</a>
+  </span>
+  <span class="r"><span id="natTop">&mdash;</span> &middot; <b id="dateTop">2025.1</b></span>
+</div>
+
+<div id="wrap">
+  <!-- ============== LEFT: nation, prestige, VP, tension ============== -->
+  <div class="panel" id="left">
+    <div class="hdr">Nation</div>
+    <div class="grp">
+      <select id="natSelect"></select>
+      <div class="row" style="margin-top:6px"><span class="k">CAMPAIGN DATE</span><span class="v" id="dateVal">2025.1</span></div>
+      <div class="traitline" id="natTraits"></div>
+      <div id="natStats" style="margin-top:5px"></div>
+      <button class="bigbtn" id="advBtn">&gt;&gt; ADVANCE MONTH</button>
+    </div>
+
+    <div class="hdr">Prestige / Popularity <span class="sub" id="prTenure">IN COMMAND</span></div>
+    <div class="hero">
+      <div class="herolbl">Public standing</div>
+      <div class="heroval" id="prVal">50</div>
+      <div class="bigbar" id="prBar"><i style="width:50%"></i></div>
+      <div class="delta" id="prDelta">&mdash;</div>
+      <div class="lbl" style="margin-top:6px;line-height:1.5">Rises with battle wins &amp; sound budgets; falls with lost crabs, debt, bad events. <b>Hit 0 → removed from command.</b></div>
+    </div>
+
+    <div class="hdr">Victory Points <span class="sub">per war</span></div>
+    <div class="grp" id="vpBox"></div>
+
+    <div class="hdr">Tension <span class="sub">0&ndash;13 &middot; 13 = WAR</span></div>
+    <div class="grp" id="tensionList"></div>
+  </div>
+
+  <!-- ============== CENTRE: events, missions, budget ============== -->
+  <div class="panel" id="centre">
+    <div class="hdr">Situation Room <span class="sub" id=" deskNote">events &middot; missions</span></div>
+    <div id="eventArea"></div>
+    <div id="missionArea"></div>
+
+    <div class="hdr">Budget &mdash; monthly</div>
+    <div class="grp" id="budgetBox"></div>
+
+    <div class="hdr">Allocation <span class="sub">% of discretionary spend</span></div>
+    <div class="grp" id="allocBox"></div>
+  </div>
+
+  <!-- ============== RIGHT: production, roster, log ============== -->
+  <div class="panel" id="right">
+    <div class="hdr">Build a Crab</div>
+    <div class="grp">
+      <select id="buildSelect"></select>
+      <button class="bigbtn teal" id="buildBtn" style="margin-top:6px">QUEUE PRODUCTION</button>
+      <div class="lbl" id="buildHint" style="margin-top:6px;line-height:1.5"></div>
+    </div>
+    <div class="hdr">Production Queue <span class="sub" id="queueCount">0</span></div>
+    <div class="grp" id="queueBox"></div>
+    <div class="hdr">Active Roster <span class="sub" id="rosterCount">0</span></div>
+    <div class="grp roster" id="rosterBox"></div>
+    <div class="hdr">Command Log</div>
+    <div class="grp"><div class="log" id="log"></div></div>
+    <div class="grp">
+      <button class="bigbtn red" id="resetBtn">NEW CAMPAIGN / RESET</button>
+    </div>
+  </div>
+</div>
+
+<div class="gameover" id="gameover">
+  <div class="big">REMOVED FROM COMMAND</div>
+  <div class="sm" id="goText"></div>
+  <button class="bigbtn red" id="goReset" style="width:auto;padding:10px 28px;margin-top:20px">START NEW CAMPAIGN</button>
+</div>
+
+<script src="command.js"></script>
+</body>
+</html>

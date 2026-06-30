@@ -97,10 +97,39 @@
     <button class="btn" id="tWind">WIND FIELD</button>
     <button class="btn" id="tRain">PRECIP</button>
   </div>
+  <div class="hdr" style="margin-top:9px">Fire Analysis</div>
+  <div class="tg">
+    <button class="btn" id="tFire">FIRE ANALYSIS</button>
+  </div>
+  <div class="tg" id="fireTraj" style="display:none;flex-direction:row;gap:4px;margin-top:5px">
+    <button class="btn fbt on" id="fDirect" style="flex:1;padding:7px 4px">DIRECT</button>
+    <button class="btn fbt" id="fOblique" style="flex:1;padding:7px 4px">OBLIQUE</button>
+    <button class="btn fbt" id="fMortar" style="flex:1;padding:7px 4px">MORTAR</button>
+  </div>
+  <div id="fireLeg" style="display:none">
+    <div class="leg"><span class="sw" style="background:#5d9a6a"></span> CAN HIT (in arc)</div>
+    <div class="leg"><span class="sw" style="background:#9a3a33"></span> DEAD SPACE (cannot)</div>
+    <div class="leg"><span class="sw" style="background:#5d6d64"></span> OUT OF RANGE</div>
+    <div class="leg"><span class="sw" style="background:#b0822c"></span> IMMUNITY BAND</div>
+  </div>
   <div class="hdr" style="margin-top:9px">Camera</div>
   <div class="tg">
     <button class="btn" id="tFly">FLY CAM &middot; F</button>
   </div>
+</div>
+
+<div class="panel" id="fire" style="top:42px;left:235px;width:212px;display:none">
+  <div class="hdr">Fire Analysis</div>
+  <div class="row"><span class="dim">UNIT&nbsp;</span> <span id="fUnit" class="k">--</span></div>
+  <div class="row"><span class="dim">TRAJ&nbsp;</span> <span id="fMode" class="k">DIRECT</span></div>
+  <div class="row"><span class="dim">REACH</span> <span id="fReach">--</span></div>
+  <div class="row dim" style="margin-top:5px">DEAD SPACE (of in-range terrain)</div>
+  <div class="bar"><i id="fDeadBar" style="background:var(--red)"></i></div>
+  <div class="row"><span id="fDeadPct" class="warn">--</span> <span class="dim">unhittable</span></div>
+  <div class="row dim" style="margin-top:6px" id="fHint">Behind crests = dead space. Flat fire leaves lots; mortar plunges into it.</div>
+  <div class="hdr" style="margin-top:9px">Angle Of Fall</div>
+  <div class="row" id="fAofRow"><span id="fAof" class="k">--</span></div>
+  <div class="row dim" id="fAofNote" style="margin-top:3px">select / target an enemy crab</div>
 </div>
 
 <div class="panel" id="wx">
