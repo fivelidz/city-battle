@@ -35,6 +35,9 @@ namespace CityBattle.Combat
 
         public double SimTime;   // mirrors SimClock for log timestamps
 
+        /// <summary>Player command: flags, flagship, formations.</summary>
+        public readonly CommandSystem Command = new();
+
         /// <summary>Weather precipitation 0..1 (0 dry, 1 heavy rain). Slows movement & cuts accuracy.</summary>
         public float Precipitation = 0f;
         float PrecipMoveFactor => 1f - Precipitation * 0.4f;   // up to 40% slower in heavy rain
@@ -66,8 +69,9 @@ namespace CityBattle.Combat
             {
                 RecomputeVision();
                 // Comms net (LOS-relay) for both teams — reuses the terrain LOS ray-march.
+                // The player's FLAGSHIP is the command node (else auto-pick the best-comms crab).
                 // Recon/relay drones aloft bridge LOS gaps over terrain.
-                CommsNet.Recompute(Units, Terrain, 0, SimTime, null, ActiveDrones);
+                CommsNet.Recompute(Units, Terrain, 0, SimTime, Command.Flagship, ActiveDrones);
                 CommsNet.Recompute(Units, Terrain, 1, SimTime, null, ActiveDrones);
                 _losTickCounter = 0;
             }

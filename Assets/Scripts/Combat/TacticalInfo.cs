@@ -120,5 +120,55 @@ namespace CityBattle.Combat
             bool exists = innerFound && (!outerFound || outer > inner);
             return (inner, outer, exists);
         }
+
+        /// <summary>
+        /// Suggest the best firing position for `shooter` to engage `target`: samples positions on
+        /// the shooter's side of the target and scores them by — can I hit it (LOS + in my range),
+        /// am I inside MY immunity band vs its gun, do I present a flank to it / can I flank it, and
+        /// is the ground a touch elevated. Returns the best world position to move to.
+        /// </summary>
+        public static Vector3 BestEngagePosition(BattleSim sim, MechaUnit shooter, MechaUnit target)
+        {
+            var terrain = sim.Terrain;
+            var myGun = shooter.Weapons.Count > 0 ? shooter.Weapons[0].def : default;
+            var enemyGun = target.Weapons.Count > 0 ? target.Weapons[0].def : default;
+            float myRange = myGun.name != null ? myGun.maxRangeM : 8000f;
+            float effRange = Mathf.Min(myRange, 6000f);          // fight at an effective distance
+            var (innerImm, outerImm, hasImm) = enemyGun.name != null
+                ? ImmunityBand(sim, shooter, enemyGun) : (0f, 0f, false);
+
+            Vector3 best = shooter.Position; float bestScore = float.MinValue;
+            Vector3 toMe = (shooter.Position - target.Position); toMe.y = 0;
+            float baseAng = Mathf.Atan2(toMe.x, toMe.z);
+
+            for (int i = 0; i < 16; i++)
+            {
+                float ang = baseAng + (i - 8) * 0.22f;          // arc on our side of the target
+                for (int rr = 0; rr < 3; rr++)
+                {
+                    float dist = effRange * (0.55f + rr * 0.2f);
+                    float wx = target.Position.x + Mathf.Sin(ang) * dist;
+                    float wz = target.Position.z + Mathf.Cos(ang) * dist;
+                    if (!terrain.InBounds(new Vector3(wx, 0, wz))) continue;
+                    float gy = terrain.HeightAt(wx, wz);
+                    Vector3 cand = new Vector3(wx, gy, wz);
+                    Vector3 eye = cand + Vector3.up * shooter.EyeHeight;
+                    Vector3 tEye = target.EyePosition;
+
+                    float score = 0f;
+                    if (terrain.HasLineOfSight(eye, tEye)) score += 40f;       // can fire directly
+                    score += (gy - terrain.Origin.y) * 0.12f;                  // high ground
+                    // Inside MY immunity band vs the enemy gun = I'm safe at this range.
+                    if (hasImm && dist >= innerImm && dist <= outerImm) score += 35f;
+                    // Flanking: am I off the target's frontal arc (hitting its thinner flank)?
+                    Vector3 toCand = (cand - target.Position); toCand.y = 0; toCand.Normalize();
+                    float dotFwd = Vector3.Dot(toCand, target.Forward);
+                    if (Mathf.Abs(dotFwd) < 0.5f) score += 15f;                // beam-on = flank
+                    score -= Vector3.Distance(cand, shooter.Position) * 0.004f; // prefer nearer moves
+                    if (score > bestScore) { bestScore = score; best = cand; }
+                }
+            }
+            return best;
+        }
     }
 }

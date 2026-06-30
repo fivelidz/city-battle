@@ -99,6 +99,36 @@ namespace CityBattle.Combat
         ChassisDef ChassisByName(string n) => Database.Instance.Chassis.Find(c => c.name == n);
         GunDef GunByName(string n) => Database.Instance.Guns.Find(g => g.name == n);
 
+        /// <summary>
+        /// Load a playable scenario: spawn its forces (with flagship + amphibious flags), place its
+        /// objective flags, and set the AI on the enemy. Replaces the default demo loadout.
+        /// </summary>
+        public void LoadScenario(Scenario sc)
+        {
+            var db = Database.Instance;
+            var pNation = db.Nations.Count > 0 ? db.Nations[0] : default;
+            var eNation = db.Nations.Count > 1 ? db.Nations[1] : pNation;
+            foreach (var su in sc.Units)
+            {
+                var chassis = ChassisByName(su.chassisName);
+                var gun = GunByName(su.gunName);
+                var armor = su.team == 0 ? ArmorScheme.Dreadnought
+                          : (chassis.cls == ChassisClass.Skirmisher ? ArmorScheme.Skirmisher : ArmorScheme.Dreadnought);
+                var u = SpawnMecha(su.name, su.team, chassis, armor,
+                                   su.team == 0 ? pNation : eNation, gun, su.pos);
+                u.Amphibious = su.amphibious;
+                if (su.flagship && su.team == 0) Sim.Command.SetFlagship(u);
+            }
+            foreach (var sf in sc.Flags)
+            {
+                var pos = new Vector3(sf.pos.x, Terrain.HeightAt(sf.pos.x, sf.pos.z), sf.pos.z);
+                Sim.Command.PlaceFlag(sf.label, pos, sf.kind, sf.team);
+            }
+            if (Sim.Command.Flagship == null) Sim.Command.AutoFlagship(Sim.Units, 0);
+            if (EnemyAI) Sim.Commanders[1] = new AI.CommanderAI(1, EnemyStance) { UseDrones = true };
+            Debug.Log($"[Battle] Scenario '{sc.Title}' loaded: {Sim.Units.Count} units, {Sim.Command.Flags.Count} flags, flagship={Sim.Command.Flagship?.Name}");
+        }
+
         /// <summary>Spawn a battle unit straight from a player-authored MechaDesign blueprint.</summary>
         public MechaUnit SpawnFromDesign(Design.MechaDesign design, int team, NationDef nation, Vector3 pos)
         {
