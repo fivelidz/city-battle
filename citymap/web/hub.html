@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CITY BATTLE // HUB</title>
+<style>
+  :root{--bg:#0b0d0c;--panel:rgba(13,17,16,.86);--hair:rgba(120,140,130,.18);
+    --ink:#9eb0a5;--dim:#5d6d64;--amber:#b0822c;--orange:#9e5420;--teal:#3e7a74;}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;min-height:100%;background:var(--bg);color:var(--ink);
+    font-family:"DejaVu Sans Mono",ui-monospace,Consolas,monospace}
+  #scan{position:fixed;inset:0;pointer-events:none;opacity:.05;
+    background:repeating-linear-gradient(0deg,transparent 0 2px,#000 3px)}
+  .wrap{max-width:1000px;margin:0 auto;padding:60px 24px}
+  h1{color:var(--orange);letter-spacing:.34em;font-size:30px;font-weight:bold}
+  .sub{color:var(--teal);letter-spacing:.12em;margin:8px 0 4px}
+  .dim{color:var(--dim);font-size:12px;line-height:1.8}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:34px}
+  a.card{display:block;background:var(--panel);border:1px solid var(--hair);padding:20px;
+    text-decoration:none;color:var(--ink);transition:.15s;
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%)}
+  a.card:hover{border-color:var(--amber);background:rgba(40,48,44,.5)}
+  .card h2{color:var(--amber);letter-spacing:.18em;font-size:15px;margin-bottom:8px;text-transform:uppercase}
+  .card p{color:var(--dim);font-size:12px;line-height:1.7}
+  .tag{display:inline-block;font-size:10px;color:var(--teal);border:1px solid var(--hair);
+    padding:2px 7px;margin-top:10px;letter-spacing:.08em}
+  .ftr{margin-top:40px;color:var(--dim);font-size:11px;line-height:1.9}
+</style>
+</head>
+<body>
+<div id="scan"></div>
+<div class="wrap">
+  <h1>CITY BATTLE</h1>
+  <div class="sub">// REVIEW HUB &mdash; artillery mecha warfare on real city terrain</div>
+  <div class="dim">Web review of the game's data &amp; designs. Shared data feeds the Unity game.</div>
+
+  <div class="cards">
+    <a class="card" href="index.html">
+      <h2>Tactical Map</h2>
+      <p>Real Sydney terrain (accurate Copernicus DEM): topographic relief, contours, harbour water,
+         18k buildings. Viewshed line-of-sight light-cast, gun-range rings, live weather &amp; wind field.</p>
+      <span class="tag">SYDNEY &middot; 11&times;12 KM &middot; LIVE WEATHER</span>
+    </a>
+    <a class="card" href="designer/index.html">
+      <h2>Crab Foundry</h2>
+      <p>Rule-the-Waves-style mecha designer respecced for crabs. Pick a chassis, allocate per-zone
+         armour, fit guns &amp; modules on a weight/cost budget &mdash; with a live 3D model.</p>
+      <span class="tag">DESIGNER &middot; LIVE 3D &middot; REAL GAME DATA</span>
+    </a>
+    <a class="card" href="designer/gallery.html">
+      <h2>Chassis Gallery</h2>
+      <p>All six crab chassis classes side by side: Recon, Skirmisher, Line, Spider, Siege, Carrier.
+         Narrow ship-like hulls on insectoid legs, scaled by tonnage.</p>
+      <span class="tag">6 CLASSES &middot; 28t &rarr; 360t</span>
+    </a>
+    <a class="card" href="index.html?mode=elevation">
+      <h2>Elevation View</h2>
+      <p>The tactical map in coloured-elevation (hypsometric) mode &mdash; reads the real Sydney
+         topography and harbour channels at a glance. Useful for 3D-print prep too.</p>
+      <span class="tag">HYPSOMETRIC &middot; 3D-PRINT READY</span>
+    </a>
+  </div>
+
+  <div class="ftr">
+    DATA: Copernicus DEM GLO-30 (terrain) &middot; OpenStreetMap (buildings, ODbL) &middot;
+    Open-Meteo (weather). &nbsp; All map data is exported as the canonical
+    <code>citymap/data/&lt;city&gt;.citymap.json</code> shared by web + Unity.
+  </div>
+</div>
+</body>
+</html>

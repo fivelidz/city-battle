@@ -1,0 +1,31 @@
+# Unity-generated / large dirs — never snapshot these (huge, zero AI value)
+Library/
+Temp/
+Obj/
+Logs/
+UserSettings/
+Build/
+Builds/
+*.csproj
+*.sln
+.vs/
+.vsconfig
+
+# Big binary assets (models, textures) — keep out of snapshots
+Assets/Art/Source/**
+*.fbx
+*.glb
+*.blend
+*.blend1
+*.psd
+*.tif
+*.tiff
+*.exr
+
+# Terrain source data (DEM rasters etc.)
+terrain_pipeline/cache/**
+terrain_pipeline/raw/**
+*.tif
+*.geotiff
+*.las
+*.laz

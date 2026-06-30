@@ -1,0 +1,15 @@
+id,name,caliber_mm,shell_weight_kg,rof_rpm,max_range_m,muzzle_velocity_ms,weight_t,cost,year_available,type
+1,LC-20 Autocannon,20,0.13,650,3000,1050,0.15,40,2025,conventional
+2,MK-30 Chaingun,30,0.42,420,4500,1080,0.35,80,2025,conventional
+3,RB-57 Light Gun,57,2.6,180,7500,1020,0.9,180,2026,conventional
+4,FT-76 Field Gun,76,6.2,90,11000,990,1.7,340,2027,conventional
+5,HW-105 Howitzer,105,15.0,40,16000,940,3.4,620,2028,conventional
+6,GM-122 Gun-Mortar,122,21.8,28,18500,910,4.8,880,2030,conventional
+7,BR-155 Battle Gun,155,43.5,16,24000,945,8.2,1500,2032,conventional
+8,SG-203 Heavy Siege,203,100.0,7,30000,900,16.0,3200,2034,conventional
+9,LV-305 Dreadnought,305,385.0,2,38000,860,42.0,9800,2025,conventional
+10,CG-40 Coil Repeater,40,0.85,260,9000,1650,0.7,520,2047,coil
+11,CG-90 Coilgun,90,9.5,55,26000,2050,5.6,2600,2050,coil
+12,RG-127 Railgun,127,18.0,30,42000,2950,9.5,5400,2045,rail
+13,RG-180 Heavy Railgun,180,52.0,12,58000,3200,19.0,11200,2052,rail
+14,RG-90 Light Railgun,90,9.0,48,34000,2700,5.2,3000,2048,rail

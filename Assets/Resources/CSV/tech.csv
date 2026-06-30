@@ -1,0 +1,82 @@
+tech_id,branch,name,year,starting,chance_pct,cost,effect
+100,Machinery,Diesel-Electric Drive,2025,1,100,0,Baseline locomotion; gradual reliability gains
+101,Machinery,Hydraulic Leg Actuators,2025,1,100,0,Baseline gait; 1% weight saving on machinery
+102,Machinery,Compact Powerpack,2029,0,45,600,3% weight saving on machinery
+103,Machinery,Hybrid Capacitor Bank,2036,0,38,1100,Gradual top-speed improvement; enables coil/rail power draw
+104,Machinery,Electro-Active Muscles,2044,0,30,1900,5% weight saving; improved turn rate
+105,Machinery,High-Density Fuel Cells,2051,0,28,2600,Extended operational range; 3% weight saving
+106,Machinery,Superconducting Drive,2060,0,20,4200,Large speed gain; required for heavy railgun power
+107,Machinery,Adaptive Gait AI,2066,0,18,5100,Gradual mobility and stability improvement on rough terrain
+120,Armour,RHA Steel,2025,1,100,0,Baseline armour tier (quality 1.00)
+121,Armour,Face-Hardened Plate,2031,0,50,800,Unlocks Face-Hardened tier (quality 1.12)
+122,Armour,Spaced Armour Arrays,2037,0,40,1300,Improved resistance to shaped charges; gradual protection gain
+123,Armour,Composite Laminate,2040,0,34,2000,Unlocks Composite tier (quality 1.30; lighter)
+124,Armour,All-or-Nothing Layout,2046,0,30,2400,Concentrates armour on vitals; better budget efficiency
+125,Armour,Ceramic-Composite,2048,0,28,3100,Unlocks Ceramic-Composite tier (quality 1.52)
+126,Armour,Reactive Composite,2057,0,22,4500,Unlocks Reactive tier (quality 1.78)
+127,Armour,Nano-Lattice Armor,2065,0,17,6800,Unlocks Nano-Lattice tier (quality 2.10; much lighter)
+140,Hull / Chassis,Skirmisher Frame,2025,1,100,0,Unlocks Skirmisher and Line chassis
+141,Hull / Chassis,Siege Frame,2025,1,100,0,Unlocks Siege (dreadnought-crab) chassis
+142,Hull / Chassis,Recon Frame,2027,0,55,500,Unlocks Recon chassis
+143,Hull / Chassis,Spider Multi-Leg Layout,2029,0,42,1200,Unlocks Spider chassis (stable gun platform)
+144,Hull / Chassis,Reinforced Subframe,2035,0,38,1500,3% mass-budget efficiency; higher mount limit
+145,Hull / Chassis,Modular Mount Bays,2042,0,32,2100,Adds one utility mount slot to medium+ chassis
+146,Hull / Chassis,Lightweight Exostructure,2050,0,26,2900,5% mass saving across all chassis
+147,Hull / Chassis,Drone-Carrier Frame,2056,0,24,3800,Unlocks Carrier-Crab chassis (extra utility mounts)
+160,Fire Control,Iron Sights & Optics,2025,1,100,0,Baseline crude fire control
+161,Fire Control,Mechanical Rangefinder,2028,0,50,700,Gradual accuracy improvement at medium range
+162,Fire Control,Director Firing,2036,0,40,1400,Enables centralised director control of mounts
+163,Fire Control,Gun Stabilisation,2039,0,35,1800,Accuracy on the move; gradual improvement
+164,Fire Control,Analog Ballistic Computer,2043,0,32,2300,Computed lead; accuracy gain at long range
+165,Fire Control,Radar-Cued Solutions,2048,0,28,3000,Couples sensors to guns; large long-range accuracy gain
+166,Fire Control,Networked Fire Solutions,2054,0,24,3700,Datalinked cooperative targeting across a lance
+167,Fire Control,Predictive Targeting AI,2063,0,19,4900,Gradual accuracy gain vs fast and evasive targets
+180,Damage Control,Manual Repair Drills,2025,1,100,0,Baseline damage control
+181,Damage Control,Fire Suppression Foam,2030,0,48,700,Reduces fire/ammo-cook-off severity
+182,Damage Control,Redundant Hydraulics,2037,0,40,1300,Gradual mobility-kill resistance improvement
+183,Damage Control,Automated Repair Bots,2046,0,30,2200,Faster in-battle repair of subsystems
+184,Damage Control,Self-Sealing Lines,2052,0,27,2800,Reduces leak/coolant loss; gradual survivability gain
+185,Damage Control,Distributed Control Mesh,2061,0,21,4000,Tolerates EW/comms damage; gradual control resilience
+200,Mountings,Single Mount,2025,1,100,0,Baseline single weapon mount
+201,Mountings,Pintle Mount,2025,1,100,0,Light flexible mount for autocannons
+202,Mountings,Twin Mount,2032,0,44,900,Enables twin mounts
+203,Mountings,Powered Traverse,2038,0,38,1400,Faster mount slew; gradual ROF benefit
+204,Mountings,Triple Mount,2045,0,30,2100,Enables triple mounts
+205,Mountings,Auto-Loading Cradle,2050,0,27,2700,Gradual ROF improvement on large calibres
+206,Mountings,Rail/Coil Mount Rails,2046,0,26,3200,Enables mounting of rail and coil guns
+220,Guns & AP,Conventional Cannon,2025,1,100,0,Baseline conventional guns (20-305mm)
+221,Guns & AP,Improved Propellant,2029,0,46,800,Gradual muzzle-velocity and range improvement
+222,Guns & AP,Capped AP Shot,2033,0,40,1300,Gradual vertical penetration improvement
+223,Guns & AP,Siege Ordnance,2034,0,36,1900,Unlocks 203mm and 305mm siege guns
+224,Guns & AP,Long-Rod Penetrators,2042,0,32,2400,Gradual penetration gain; better velocity retention
+225,Guns & AP,Coilgun Principles,2047,0,27,3300,Unlocks coil guns (high velocity for calibre)
+226,Guns & AP,Railgun Principles,2045,0,26,3600,Unlocks rail guns (very high velocity and range)
+227,Guns & AP,Hypervelocity Sabot,2055,0,22,4400,Gradual penetration gain for rail/coil calibres
+228,Guns & AP,Smart Fuzing,2060,0,20,4800,Improved plunging/top-attack effect at long range
+240,Sensors,Optical Spotting,2025,1,100,0,Baseline visual detection range
+241,Sensors,Acoustic Ranging,2031,0,46,700,Gradual detection of moving targets
+242,Sensors,Search Radar,2045,0,32,2200,Enables radar detection beyond line of sight
+243,Sensors,LIDAR Array,2049,0,28,2900,High-precision ranging; fire-control synergy
+244,Sensors,Datalink Network,2052,0,25,3400,Shares contacts across a lance (network-centric)
+245,Sensors,Sensor Fusion Suite,2058,0,22,4100,Gradual detection and ID improvement; clutter rejection
+246,Sensors,Low-Probability-of-Intercept Radar,2064,0,18,5000,Harder to detect/jam; gradual stealth-sensing gain
+260,DRONES,Recon Drone Operations,2055,0,26,3200,Unlocks recon drones; extends vision (high altitude)
+261,DRONES,Long-Endurance Recon,2058,0,24,3700,Unlocks high-altitude long-range recon drone
+262,DRONES,Loitering Munitions,2057,0,24,3900,Unlocks loiter-munition drones (top-attack strike)
+263,DRONES,Dedicated Strike Drones,2059,0,23,4300,Unlocks strike drones (heavy payload; fast)
+264,DRONES,Satellite Drone Control,2060,0,21,4600,Enables over-the-horizon satellite-linked drones
+265,DRONES,Mesh Networking,2061,0,20,4800,Enables mesh-linked drone cooperation
+266,DRONES,Fire-and-Forget Seekers,2062,0,19,5000,Enables autonomous terminal homing payloads
+267,DRONES,Fibre-Optic Tether,2064,0,17,5600,Enables fibre-optic drone control (jam-immune; short range)
+268,DRONES,Swarm Autonomy AI,2065,0,16,6200,Enables swarm drones with swarm-AI coordination
+269,DRONES,EMP Payloads,2066,0,15,6500,Enables EMP drone payloads (disable enemy electronics)
+270,DRONES,Thermobaric Warheads,2061,0,19,4900,Enables thermobaric drone payloads (area effect)
+280,Electronic Warfare,Radio Jamming,2060,0,22,4000,Unlocks jammer module; degrades radio-linked enemy drones in radius
+281,Electronic Warfare,Drone Detection Suite,2060,0,22,3800,Unlocks drone detector; early warning of inbound drones
+282,Electronic Warfare,GNSS/Signal Spoofing,2061,0,20,4400,Unlocks spoofer; misdirects waypoint and satellite drones
+283,Electronic Warfare,C-UAS Hardkill,2062,0,19,4900,Unlocks CUAS turret (point defence against drones)
+284,Electronic Warfare,Hardened Datalink,2063,0,19,4200,Unlocks hardened link; counters enemy jamming of your drones
+285,Electronic Warfare,Frequency Hopping,2064,0,18,4500,Unlocks freq-hop; gradual resistance to jamming and spoofing
+286,Electronic Warfare,Wideband Jamming,2067,0,15,6400,Unlocks wideband jammer (large radius; high strength)
+287,Electronic Warfare,Counter-Swarm Doctrine,2068,0,14,6900,Gradual effectiveness gain of C-UAS against swarm-AI drones
+288,Electronic Warfare,Autonomous EW Management,2069,0,13,7400,Automated jamming/spoofing allocation; gradual EW efficiency gain

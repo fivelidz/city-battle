@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CITY BATTLE // SYDNEY TACTICAL MAP</title>
+<style>
+  /* ===== Evangelion-esque, MUTED (not glaring) ===== */
+  :root{
+    --bg:#0b0d0c; --panel:rgba(13,17,16,.84); --hair:rgba(120,140,130,.16);
+    --ink:#9eb0a5; --dim:#5d6d64; --amber:#b0822c; --orange:#9e5420;
+    --red:#9a3a33; --teal:#3e7a74;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"DejaVu Sans Mono",ui-monospace,Consolas,monospace;color:var(--ink)}
+  #c{position:fixed;inset:0}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--hair);padding:10px 12px;
+    backdrop-filter:blur(2px)}
+  .hdr{color:var(--amber);font-size:11px;letter-spacing:.24em;font-weight:bold;margin-bottom:7px;text-transform:uppercase}
+  .row{font-size:11px;line-height:1.8;letter-spacing:.03em}
+  .dim{color:var(--dim)} .k{color:var(--teal)} .warn{color:var(--red)}
+  #top{top:0;left:0;right:0;height:30px;display:flex;align-items:center;gap:16px;padding:0 14px;border-width:0 0 1px}
+  #top .t{color:var(--orange);font-weight:bold;letter-spacing:.3em;font-size:13px}
+  #top .r{margin-left:auto;color:var(--dim);font-size:11px;letter-spacing:.12em}
+  #left{top:42px;left:10px;width:215px}
+  #legend{top:42px;right:10px;width:194px}
+  #wx{top:498px;right:10px;width:194px}
+  #unit{bottom:10px;left:10px;width:270px;display:none}
+  #ctrls{bottom:10px;right:10px;display:flex;gap:6px}
+  .btn{background:rgba(38,46,42,.55);border:1px solid var(--hair);color:var(--amber);
+    font-family:inherit;font-size:11px;letter-spacing:.08em;padding:7px 10px;cursor:pointer;text-transform:uppercase}
+  .btn:hover{background:rgba(58,70,64,.65);color:var(--ink)}
+  .btn.on{border-color:var(--amber);color:var(--ink)}
+  select{background:#10130f;color:var(--ink);border:1px solid var(--hair);font-family:inherit;font-size:11px;padding:5px;width:100%;margin-top:7px}
+  .leg{display:flex;align-items:center;gap:8px;font-size:10px;margin:4px 0;color:var(--dim)}
+  .sw{width:13px;height:4px}
+  .tg{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+  .bar{height:5px;background:rgba(80,90,85,.22);margin:3px 0 7px;position:relative}
+  .bar>i{position:absolute;inset:0 auto 0 0;background:var(--teal)}
+  #scan{position:fixed;inset:0;pointer-events:none;z-index:4;opacity:.045;
+    background:repeating-linear-gradient(0deg,transparent 0 2px,#000 3px)}
+  .hint{position:fixed;bottom:52px;right:10px;font-size:10px;color:var(--dim);text-align:right;line-height:1.9;letter-spacing:.04em}
+  #load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:30;color:var(--amber);letter-spacing:.3em}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="scan"></div>
+<div id="load">LOADING SYDNEY TACTICAL MAP&hellip;</div>
+
+<div class="panel" id="top">
+  <span class="t">CITY BATTLE</span><span class="dim" style="font-size:11px">// TACTICAL MAP</span>
+  <span id="cityName" class="k" style="font-size:11px"></span>
+  <span class="r" id="status">SECTOR SCAN</span>
+</div>
+
+<div class="panel" id="left">
+  <div class="hdr">Sector</div>
+  <div class="row"><span class="dim">MAP&nbsp;&nbsp;</span><span id="lCity" class="k"></span></div>
+  <div class="row"><span class="dim">EXTENT</span> <span id="lExt"></span></div>
+  <div class="row"><span class="dim">RELIEF</span> <span id="lRel"></span></div>
+  <div class="row"><span class="dim">STRUCT</span> <span id="lBld"></span></div>
+  <div class="row warn" style="margin-top:6px">CONDITIONS: INHOSPITABLE</div>
+  <div class="row dim">DOWNED CREW MUST BE RECOVERED</div>
+  <select id="citySel"></select>
+</div>
+
+<div class="panel" id="legend">
+  <div class="hdr">Overlays</div>
+  <div class="leg"><span class="sw" style="background:#6db48f;opacity:.6"></span> LINE OF SIGHT</div>
+  <div class="leg"><span class="sw" style="background:#b0822c;opacity:.7"></span> GUN RANGE</div>
+  <div class="leg"><span class="sw" style="background:#3e7a74"></span> FRIENDLY CRAB</div>
+  <div class="leg"><span class="sw" style="background:#9a3a33"></span> HOSTILE CRAB</div>
+  <div class="leg"><span class="sw" style="background:#7a6a3a"></span> CIVILIAN SCAVENGER</div>
+  <div class="leg"><span class="sw" style="background:#9fc6dd"></span> WIND VECTOR</div>
+  <div class="hdr" style="margin-top:9px">View Mode</div>
+  <div class="tg">
+    <button class="btn on" id="vShaded">STANDARD SHADED</button>
+    <button class="btn" id="vElev">COLOURED ELEVATION</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Toggles</div>
+  <div class="tg">
+    <button class="btn on" id="tLOS">LINE OF SIGHT</button>
+    <button class="btn on" id="tRange">GUN RANGE</button>
+    <button class="btn on" id="tBld">BUILDINGS</button>
+    <button class="btn" id="tWire">CONTOUR WIRE</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Weather</div>
+  <div class="tg">
+    <button class="btn" id="tWind">WIND FIELD</button>
+    <button class="btn" id="tRain">PRECIP</button>
+  </div>
+</div>
+
+<div class="panel" id="wx">
+  <div class="hdr">Conditions</div>
+  <div id="wxBody"><div class="row dim">NO WEATHER DATA</div></div>
+  <div class="row dim" style="margin-top:5px;font-size:9px;letter-spacing:.04em">PRE-BATTLE FORECAST &middot; OPEN-METEO</div>
+</div>
+
+<div class="panel" id="unit">
+  <div class="hdr" id="uName">CRAB</div>
+  <div class="row"><span class="dim">CLASS</span> <span id="uClass" class="k"></span></div>
+  <div class="row"><span class="dim">IDENT</span> <span id="uIdent"></span></div>
+  <div class="row dim">STRUCT</div><div class="bar"><i id="uStruct"></i></div>
+  <div class="row"><span class="dim">GUN&nbsp;&nbsp;</span> <span id="uGun"></span></div>
+  <div class="row"><span class="dim">RANGE</span> <span id="uRange"></span></div>
+  <div class="row dim" id="uNote" style="margin-top:5px"></div>
+</div>
+
+<div class="panel" id="ctrls">
+  <button class="btn" id="zin">+</button>
+  <button class="btn" id="zout">&minus;</button>
+  <button class="btn" id="rst">RESET</button>
+</div>
+<div class="hint">DRAG orbit &middot; WHEEL zoom &middot; CLICK a crab to inspect<br>map review viewer &mdash; shared data with the Unity game</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>

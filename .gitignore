@@ -1,0 +1,32 @@
+# Unity generated
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+*.csproj
+*.sln
+*.user
+.vs/
+.vsconfig
+
+# City-map pipeline caches (large DEM tiles / raw OSM) - regenerable
+citymap/cache/
+
+# Big binary assets / generated 3D exports
+*.fbx
+*.blend
+*.blend1
+citymap/data/*_buildings.obj
+citymap/data/*_terrain.stl
+*.npy
+
+# OS / editor
+.DS_Store
+*.swp
+/tmp/
+
+# Keep: Assets/, citymap/web, citymap/pipeline, citymap/data/*.citymap.json, docs/

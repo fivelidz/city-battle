@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CITY BATTLE // CRAB GALLERY</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0d0c;overflow:hidden;
+    font-family:"DejaVu Sans Mono",ui-monospace,Consolas,monospace}
+  #view{position:fixed;inset:0}
+  #hdr{position:fixed;top:8px;left:14px;color:#9e5420;letter-spacing:.3em;
+    font-weight:bold;font-size:14px;z-index:5}
+  #hdr small{color:#5d6d64;letter-spacing:.1em;font-weight:normal}
+  .lbl{position:absolute;transform:translate(-50%,-50%);color:#9eb0a5;
+    font-size:11px;letter-spacing:.12em;text-align:center;text-shadow:0 0 4px #000;
+    pointer-events:none;white-space:nowrap}
+  .lbl b{color:#b0822c}
+  .lbl span{display:block;color:#5d6d64;font-size:9px;margin-top:2px}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="hdr">CITY BATTLE &nbsp;<small>// CRAB CHASSIS GALLERY</small></div>
+<div id="labels"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="crabmodel.js"></script>
+<script>
+(function () {
+  var T = THREE;
+  var canvas = document.getElementById("view");
+  var renderer = new T.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setClearColor(0x0b0d0c, 1);
+  renderer.toneMapping = T.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.25;
+
+  var scene = new T.Scene();
+  scene.fog = new T.Fog(0x0b0d0c, 160, 520);
+
+  var cam = new T.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 3000);
+
+  // Eva-aesthetic lighting: muted hemi + warm key + teal rim (a touch brighter so detail reads)
+  scene.add(new T.HemisphereLight(0x9fb3a6, 0x1a201d, 1.05));
+  var key = new T.DirectionalLight(0xe4ddca, 1.35); key.position.set(-1, 1.5, 0.8); scene.add(key);
+  var rim = new T.DirectionalLight(0x5a8f86, 0.7); rim.position.set(1.2, 0.5, -1.1); scene.add(rim);
+  var fill = new T.DirectionalLight(0x3a5d57, 0.5); fill.position.set(0.6, 0.6, 1.4); scene.add(fill);
+
+  // muted ground grid
+  var grid = new T.GridHelper(700, 70, 0x2a342e, 0x161d19);
+  grid.position.y = 0; scene.add(grid);
+
+  // the six classes, with a sensible default loadout each (mounts pulled from defaults)
+  var CLASSES = [
+    { cls: "Recon",      name: "WHIPPET",    sub: "Recon \u00b7 28t \u00b7 6 legs",   L: 16 },
+    { cls: "Skirmisher", name: "JACKAL",     sub: "Skirmisher \u00b7 55t \u00b7 6 legs", L: 22 },
+    { cls: "Line",       name: "HOPLITE",    sub: "Line \u00b7 120t \u00b7 8 legs",   L: 28 },
+    { cls: "Carrier",    name: "NIMBUS",     sub: "Carrier \u00b7 240t \u00b7 10 legs", L: 38 },
+    { cls: "Spider",     name: "BASTION",    sub: "Spider \u00b7 210t \u00b7 12 legs", L: 34 },
+    { cls: "Siege",      name: "LEVIATHAN",  sub: "Siege \u00b7 360t \u00b7 8 legs",  L: 44 },
+  ];
+
+  var spacing = 52;
+  var x0 = -(CLASSES.length - 1) * spacing / 2;
+  var crabs = [];
+  CLASSES.forEach(function (c, i) {
+    var spec = { chassisClass: c.cls, lengthM: c.L, team: "friend" };
+    var m = CrabModel.build(spec);
+    m.group.position.set(x0 + i * spacing, 0, 0);
+    m.group.rotation.y = 2.5; // 3/4 view, bow toward camera so the ship hull reads
+    scene.add(m.group);
+    crabs.push({ g: m.group, x: x0 + i * spacing, meta: c, L: c.L });
+  });
+
+  // camera: framed so the row fills the view, slight high angle to read decks + legs
+  var span = CLASSES.length * spacing;
+  cam.position.set(0, span * 0.20, span * 0.62);
+  var target = new T.Vector3(0, 11, -2);
+  cam.lookAt(target);
+
+  var controls = new T.OrbitControls(cam, canvas);
+  controls.target.copy(target);
+  controls.enableDamping = true;
+  controls.update();
+
+  // HTML labels projected under each crab
+  var labelBox = document.getElementById("labels");
+  var labelEls = crabs.map(function (c) {
+    var d = document.createElement("div");
+    d.className = "lbl";
+    d.innerHTML = "<b>" + c.meta.name + "</b><span>" + c.meta.sub + "</span>";
+    labelBox.appendChild(d);
+    return d;
+  });
+
+  function updateLabels() {
+    crabs.forEach(function (c, i) {
+      var v = new T.Vector3(c.x, -2, 0).project(cam);
+      var sx = (v.x * 0.5 + 0.5) * innerWidth;
+      var sy = (-v.y * 0.5 + 0.5) * innerHeight;
+      labelEls[i].style.left = sx + "px";
+      labelEls[i].style.top = sy + "px";
+    });
+  }
+
+  addEventListener("resize", function () {
+    cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  var spin = 0;
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    updateLabels();
+    renderer.render(scene, cam);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

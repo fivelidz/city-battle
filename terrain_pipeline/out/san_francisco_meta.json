@@ -1,0 +1,33 @@
+{
+  "city": "san_francisco",
+  "bbox": {
+    "south": 37.73,
+    "west": -122.47,
+    "north": 37.8,
+    "east": -122.405
+  },
+  "source_shape": [
+    258,
+    190
+  ],
+  "resolution": 513,
+  "real_min_m": 3.59,
+  "real_max_m": 280.59,
+  "real_width_m": 5720.11,
+  "real_height_m": 7792.4,
+  "vertical_exaggeration": 1.0,
+  "unity_terrain": {
+    "heightmap_resolution": 513,
+    "size_width_m": 5720.1,
+    "size_length_m": 7792.4,
+    "size_height_m": 277.0,
+    "import_raw": {
+      "bit_depth": 16,
+      "byte_order": "little-endian (Windows)",
+      "resolution": "513x513",
+      "flip_vertically": false
+    }
+  },
+  "data_source": "AWS Terrain Tiles (Mapzen/Terrarium). Attribution required -- see README.md.",
+  "encoding": "elevation_m = (R*256 + G + B/256) - 32768"
+}

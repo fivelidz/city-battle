@@ -1,0 +1,16 @@
+id,name,role,year_available,speed_kmh,range_m,loiter_min,altitude_m,payload_kg,payload_type,control_link,autonomy,cost
+1,Kite Eye,recon,2055,90,12000,45,1200,0,none,radio,waypoint,420
+2,High Hawk,recon,2058,120,25000,60,3500,0,none,satellite,waypoint,780
+3,Stratos Eye,recon,2063,150,40000,90,6000,0,none,mesh,swarm_ai,1350
+4,Hornet LM,loiter_munition,2057,140,8000,30,400,6,shaped_charge,radio,manual,900
+5,Wasp LM,loiter_munition,2060,160,10000,35,500,9,frag,mesh,fire_and_forget,1150
+6,Lance Strike,strike,2059,210,18000,12,800,25,thermobaric,satellite,waypoint,2400
+7,Spear Strike,strike,2062,240,22000,10,900,40,shaped_charge,satellite,fire_and_forget,3100
+8,Tether Hornet,loiter_munition,2064,130,4000,25,350,8,shaped_charge,fibre_optic,manual,1050
+9,Swarm Midge,swarm,2065,150,9000,28,600,4,frag,mesh,swarm_ai,1400
+10,Sparrow EMP,strike,2066,200,16000,14,700,18,emp,fibre_optic,fire_and_forget,2900
+11,Glaive Laser,strike,2067,230,20000,40,2500,12,laser,mesh,fire_and_forget,4200
+12,Photon Interceptor,strike,2068,260,14000,55,3000,8,laser,mesh,swarm_ai,4800
+13,Locust Swarm,swarm,2068,160,11000,32,700,3,shaped_charge,mesh,swarm_ai,1700
+14,Banshee Jammer Drone,recon,2066,140,18000,50,2800,30,emp,fibre_optic,waypoint,2600
+15,Tether Lancer,loiter_munition,2069,135,5500,40,400,10,laser,fibre_optic,manual,3500

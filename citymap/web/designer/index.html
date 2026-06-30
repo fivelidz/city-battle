@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CITY BATTLE // CRAB FOUNDRY</title>
+<style>
+  :root{
+    --bg:#0b0d0c; --panel:rgba(13,17,16,.86); --hair:rgba(120,140,130,.16);
+    --ink:#9eb0a5; --dim:#5d6d64; --amber:#b0822c; --orange:#9e5420;
+    --red:#9a3a33; --teal:#3e7a74; --good:#6f9e6a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"DejaVu Sans Mono",ui-monospace,Consolas,monospace;color:var(--ink);font-size:12px}
+  #view{position:fixed;inset:0}
+  #top{position:fixed;top:0;left:0;right:0;height:30px;display:flex;align-items:center;gap:16px;
+    padding:0 14px;background:var(--panel);border-bottom:1px solid var(--hair);z-index:10}
+  #top .t{color:var(--orange);font-weight:bold;letter-spacing:.3em;font-size:13px}
+  #top .r{margin-left:auto;color:var(--dim);letter-spacing:.1em}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--hair);backdrop-filter:blur(3px)}
+  .hdr{color:var(--amber);font-size:11px;letter-spacing:.22em;font-weight:bold;
+    text-transform:uppercase;padding:8px 12px 5px;border-bottom:1px solid var(--hair)}
+  #left{top:42px;left:10px;bottom:10px;width:268px;overflow-y:auto;overflow-x:hidden}
+  #right{top:42px;right:10px;bottom:10px;width:280px;overflow-y:auto}
+  .grp{padding:8px 12px;border-bottom:1px solid var(--hair)}
+  .lbl{color:var(--dim);font-size:10px;letter-spacing:.08em;margin-bottom:4px;text-transform:uppercase}
+  .opt{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;cursor:pointer;
+    border:1px solid transparent}
+  .opt:hover{background:rgba(60,72,66,.4)}
+  .opt.sel{border-color:var(--amber);background:rgba(120,86,30,.18);color:var(--ink)}
+  .opt .nm{color:var(--ink)} .opt .sub{color:var(--dim);font-size:10px}
+  .row{display:flex;justify-content:space-between;padding:2px 0;font-size:11px}
+  .row .k{color:var(--dim)} .row .v{color:var(--ink)}
+  .row.warn .v{color:var(--red)} .row.good .v{color:var(--good)}
+  .bar{height:6px;background:rgba(80,90,85,.22);margin:4px 0;position:relative;border:1px solid var(--hair)}
+  .bar>i{position:absolute;inset:0 auto 0 0;background:var(--teal)}
+  .bar.over>i{background:var(--red)}
+  .stepper{display:flex;align-items:center;gap:6px;margin:3px 0}
+  .stepper .nm{flex:1;color:var(--ink)}
+  .sbtn{width:22px;height:22px;background:rgba(40,48,44,.7);border:1px solid var(--hair);
+    color:var(--amber);cursor:pointer;font-size:13px;line-height:1}
+  .sbtn:hover{background:rgba(60,72,66,.8)}
+  .sval{width:54px;text-align:right;color:var(--ink)}
+  select,input[type=text]{background:#10130f;color:var(--ink);border:1px solid var(--hair);
+    font-family:inherit;font-size:11px;padding:5px;width:100%}
+  .mount{display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid var(--hair);margin:3px 0}
+  .mount select{flex:1}
+  .banner{padding:6px 12px;font-weight:bold;letter-spacing:.1em;font-size:11px;text-align:center}
+  .ok{background:rgba(60,110,60,.25);color:var(--good)}
+  .bad{background:rgba(120,40,36,.3);color:var(--red)}
+  .nav a{color:var(--dim);text-decoration:none;letter-spacing:.1em;margin-left:14px}
+  .nav a:hover{color:var(--amber)}
+  #scan{position:fixed;inset:0;pointer-events:none;z-index:4;opacity:.04;
+    background:repeating-linear-gradient(0deg,transparent 0 2px,#000 3px)}
+  .err{color:var(--red);font-size:10px;line-height:1.5;margin-top:3px}
+  .warnmsg{color:var(--amber);font-size:10px;line-height:1.5}
+  ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:rgba(120,140,130,.25)}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="scan"></div>
+<div id="top">
+  <span class="t">CITY BATTLE</span><span class="dim">// CRAB FOUNDRY &mdash; MECHA DESIGN</span>
+  <span class="nav"><a href="../index.html">&larr; TACTICAL MAP</a></span>
+  <span class="r" id="yearLbl">DESIGN YEAR 2035</span>
+</div>
+
+<div class="panel" id="left">
+  <div class="hdr">Chassis</div>
+  <div class="grp" id="chassisList"></div>
+  <div class="hdr">Armour Material</div>
+  <div class="grp" id="armorList"></div>
+  <div class="hdr">Armour Scheme (mm)</div>
+  <div class="grp" id="armorScheme"></div>
+</div>
+
+<div class="panel" id="right">
+  <div class="hdr">Weapon Mounts</div>
+  <div class="grp" id="mountList"></div>
+  <div class="hdr">Utility Modules</div>
+  <div class="grp" id="moduleList"></div>
+  <div class="hdr">Analysis</div>
+  <div id="validBanner" class="banner ok">VALID DESIGN</div>
+  <div class="grp" id="analysis"></div>
+  <div class="grp" id="messages"></div>
+  <div class="grp">
+    <div class="lbl">Design Name</div>
+    <input type="text" id="designName" value="PATTERN-I HOPLITE">
+    <div class="row" style="margin-top:6px"><span class="k">YEAR</span><span class="v" id="yearVal">2035</span></div>
+    <div class="stepper"><span class="nm">research year</span>
+      <button class="sbtn" id="yrDown">&minus;</button><span class="sval" id="yrShow">2035</span><button class="sbtn" id="yrUp">+</button></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="crabmodel.js"></script>
+<script src="designer.js"></script>
+</body>
+</html>

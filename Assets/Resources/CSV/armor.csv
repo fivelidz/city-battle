@@ -1,0 +1,7 @@
+id,name,year_available,density_kg_per_m2_per_mm,quality_factor,cost_per_t
+1,RHA Steel,2025,7.85,1.00,1000
+2,Face-Hardened Plate,2031,7.85,1.12,1500
+3,Composite Laminate,2040,5.90,1.30,2600
+4,Ceramic-Composite,2048,4.40,1.52,4200
+5,Reactive Composite,2057,5.10,1.78,6800
+6,Nano-Lattice Armor,2065,3.20,2.10,11500
