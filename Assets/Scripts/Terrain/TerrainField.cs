@@ -14,8 +14,17 @@ namespace CityBattle.Terrain
         public readonly Vector3 Origin;   // world position of sample [0,0]
         readonly float[,] _height;        // [x,z] metres
 
+        /// <summary>World Y of the water surface (sea level). Terrain below this is water.</summary>
+        public float WaterLevelM = float.NegativeInfinity;   // -inf = no water by default
+
         public float WorldWidth => (Width - 1) * CellSize;
         public float WorldLength => (Length - 1) * CellSize;
+
+        /// <summary>True if the ground at (x,z) is below the water surface.</summary>
+        public bool IsWater(float worldX, float worldZ) => HeightAt(worldX, worldZ) < WaterLevelM;
+        /// <summary>Water depth (metres) at (x,z); 0 on dry land.</summary>
+        public float WaterDepthAt(float worldX, float worldZ)
+            => Mathf.Max(0f, WaterLevelM - HeightAt(worldX, worldZ));
 
         public TerrainField(float[,] height, float cellSize, Vector3 origin)
         {

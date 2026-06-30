@@ -9,7 +9,12 @@ using CityBattle.Terrain;
 
 namespace CityBattle.Units
 {
-    public enum FireMode { Hold, Direct, Indirect }
+    public enum FireMode { Hold, Direct, Indirect, Mortar }
+    // Trajectory class drives dead-space behaviour (see docs/wiki/01_FIRE_AND_BALLISTICS):
+    //   Flat   = direct, large dead space behind crests, hits side/glacis.
+    //   Arced  = indirect/howitzer, less dead space, hits side at mid / top at long range.
+    //   High   = mortar, minimal dead space, plunges into defilade, hits the top/carapace.
+    public enum TrajectoryClass { Flat, Arced, High }
 
     [System.Serializable]
     public class WeaponInstance
@@ -35,6 +40,15 @@ namespace CityBattle.Units
         public NationDef Nation;
         public List<WeaponInstance> Weapons = new();
         public List<EwDef> EwModules = new();          // jammers, laser-CUAS, charge bays, etc.
+
+        // ---- Amphibious (build option) ----
+        public bool Amphibious;                        // can wade/cross water (else water is impassable)
+        public float MaxWadeDepthM = 4f;               // how deep it can wade (scales with chassis size)
+        public bool CanFireInWater;                    // late-tech: may fire while wading (with penalty)
+        public float WaterFirePenalty = 0.5f;          // accuracy multiplier while firing in water
+        // Runtime water state, set each tick from terrain water level:
+        public bool InWater;
+        public float WaterDepthM;
 
         // ---- Sim state ----
         public Vector3 Position;          // world, .y clamped to ground
@@ -91,10 +105,17 @@ namespace CityBattle.Units
         public float SpeedMs => Chassis.BaseSpeedMs * Mathf.Clamp01(Mobility);
 
         // ---- Movement (called by sim) ----
-        public void TickMovement(TerrainField terrain, float dt)
+        public void TickMovement(TerrainField terrain, float dt) => TickMovement(terrain, dt, 1f);
+
+        /// <summary>precipFactor &lt;1 slows movement (rain/mud). Set by BattleSim from weather.</summary>
+        public void TickMovement(TerrainField terrain, float dt, float precipFactor)
         {
             PrevPosition = Position;
             PrevHeadingDeg = HeadingDeg;
+
+            // Refresh water state at the current position.
+            WaterDepthM = terrain.WaterDepthAt(Position.x, Position.z);
+            InWater = WaterDepthM > 0.2f;
 
             // Immobilised mechs cannot move (legs/drive shot out) — they fight as fixed guns.
             if (!HasMoveOrder || !CanMove) { Moving = false; Velocity = Vector3.zero; return; }
@@ -124,6 +145,21 @@ namespace CityBattle.Units
             float facingErr = Mathf.Abs(Mathf.DeltaAngle(HeadingDeg, desired));
             float speed = SpeedMs * (facingErr < 30f ? 1f : 0.25f);
 
+            // Precipitation (rain/mud) slows movement.
+            speed *= Mathf.Clamp01(precipFactor);
+
+            // Wading: amphibious crabs cross shallow water (slowed); deep water / non-amphibious = blocked.
+            float stepDepth = terrain.WaterDepthAt(flatPos.x + dir.x * 2f, flatPos.z + dir.z * 2f);
+            if (stepDepth > 0.2f)
+            {
+                if (!Amphibious || stepDepth > MaxWadeDepthM)
+                {
+                    // Cannot enter the water — stop at the shoreline.
+                    Moving = false; Velocity = Vector3.zero; return;
+                }
+                speed *= 0.45f;   // wading drag
+            }
+
             // Slope slows movement (uphill penalty).
             float step = Mathf.Min(speed * dt, dist);
             Vector3 next = flatPos + dir * step;
@@ -135,7 +171,14 @@ namespace CityBattle.Units
             Position = new Vector3(next.x, groundNext, next.z);
             Velocity = (Position - PrevPosition) / dt;
             Moving = Velocity.sqrMagnitude > 0.01f;
+            WaterDepthM = terrain.WaterDepthAt(Position.x, Position.z);
+            InWater = WaterDepthM > 0.2f;
         }
+
+        /// <summary>Can this crab fire right now? Amphibious crabs in water can only fire if CanFireInWater.</summary>
+        public bool CanFireNow => CanShoot && (!InWater || CanFireInWater);
+        /// <summary>Accuracy multiplier for the current situation (water-fire penalty when wading).</summary>
+        public float SituationalAccuracy => (InWater && CanFireInWater) ? WaterFirePenalty : 1f;
 
         public void TickWeapons(float dt)
         {

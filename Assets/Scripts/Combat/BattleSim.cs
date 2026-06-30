@@ -35,6 +35,10 @@ namespace CityBattle.Combat
 
         public double SimTime;   // mirrors SimClock for log timestamps
 
+        /// <summary>Weather precipitation 0..1 (0 dry, 1 heavy rain). Slows movement & cuts accuracy.</summary>
+        public float Precipitation = 0f;
+        float PrecipMoveFactor => 1f - Precipitation * 0.4f;   // up to 40% slower in heavy rain
+
         /// <summary>Firing-solution / bracketing quality 0..1 for a shooter->target pair.</summary>
         public float LockQuality(MechaUnit shooter, MechaUnit target)
             => _rangedIn.TryGetValue((shooter.Id, target.Id), out var v) ? v : 0f;
@@ -66,7 +70,7 @@ namespace CityBattle.Combat
                     Commanders[t]?.Think(this, t, _tick);
 
             // 3. Movement
-            foreach (var u in Units) if (u.Alive) u.TickMovement(Terrain, dt);
+            foreach (var u in Units) if (u.Alive) u.TickMovement(Terrain, dt, PrecipMoveFactor);
 
             // 4. Drones (advance agents, extend vision, run attacks)
             for (int i = ActiveDrones.Count - 1; i >= 0; i--)
@@ -79,7 +83,7 @@ namespace CityBattle.Combat
             // 5. Fire control -> spawn projectiles
             foreach (var u in Units)
             {
-                if (!u.Alive || !u.CanShoot || u.Fire == FireMode.Hold) continue;
+                if (!u.Alive || !u.CanFireNow || u.Fire == FireMode.Hold) continue;
                 u.TickWeapons(dt);
                 TryFire(u);
             }
@@ -194,8 +198,23 @@ namespace CityBattle.Combat
 
             bool directLos = Terrain.HasLineOfSight(shooter.EyePosition, target.EyePosition);
 
-            // Direct mode requires LOS; indirect mode lobs over terrain at a spotted target.
-            bool indirect = shooter.Fire == FireMode.Indirect || !directLos;
+            // Trajectory class by fire mode: Direct=flat (needs LOS), Indirect=arced, Mortar=high.
+            // No LOS forces at least an arced lob. Dead space: a flat/arced trajectory may be unable
+            // to clear intervening terrain to reach a defiladed target — only a high arc gets in.
+            var traj = shooter.Fire switch
+            {
+                FireMode.Mortar => TrajectoryClass.High,
+                FireMode.Indirect => TrajectoryClass.Arced,
+                _ => directLos ? TrajectoryClass.Flat : TrajectoryClass.Arced
+            };
+            bool indirect = traj != TrajectoryClass.Flat;
+
+            // Flat fire into dead space (no LOS) is impossible.
+            if (traj == TrajectoryClass.Flat && !directLos) return;
+            // Arced fire can be masked by terrain higher than its arc; high-angle (mortar) gets in.
+            if (traj == TrajectoryClass.Arced && !directLos &&
+                !ArcClearsTerrain(shooter.EyePosition, target.EyePosition, 0.25f))
+                return;  // target is in dead space for this arc — need a steeper trajectory (mortar)
 
             foreach (var w in shooter.Weapons)
             {
@@ -272,9 +291,35 @@ namespace CityBattle.Combat
         float RangedIn(MechaUnit shooter, MechaUnit target)
             => _rangedIn.TryGetValue((shooter.Id, target.Id), out var v) ? v : 0f;
 
+        /// <summary>
+        /// Dead-space test for an ARCED (howitzer) trajectory: does a parabola from `from` to `to`
+        /// with apex height controlled by `bow` clear the intervening terrain? A flatter `bow`
+        /// (smaller) leaves more dead space; a high arc (mortar) clears almost anything. Used to
+        /// model "only mortar fire reaches into deep defilade" (ATP 3-21.90).
+        /// </summary>
+        bool ArcClearsTerrain(Vector3 from, Vector3 to, float bow)
+        {
+            Vector3 d = to - from;
+            float horiz = new Vector2(d.x, d.z).magnitude;
+            if (horiz < 1f) return true;
+            int steps = Mathf.Clamp(Mathf.CeilToInt(horiz / Terrain.CellSize), 4, 120);
+            float apex = bow * horiz;   // apex height above the straight chord
+            for (int i = 1; i < steps; i++)
+            {
+                float t = (float)i / steps;
+                float wx = from.x + d.x * t;
+                float wz = from.z + d.z * t;
+                float chordY = from.y + d.y * t;
+                float arcY = chordY + apex * 4f * t * (1f - t);   // parabolic bump
+                if (Terrain.HeightAt(wx, wz) > arcY) return false;  // terrain pokes through the arc
+            }
+            return true;
+        }
+
         Vector3 ScatterAim(Vector3 aim, Vector3 muzzle, MechaUnit shooter, MechaUnit target, float range)
         {
-            float acc = shooter.Accuracy;                          // fire control (cupola) health folds in
+            // Fire control (cupola) health + situational penalties (firing while wading, rain).
+            float acc = shooter.Accuracy * shooter.SituationalAccuracy * (1f - Precipitation * 0.3f);
             float shooterStill = shooter.Moving ? 2.2f : 1f;       // firing on the move is much worse
             float targetStill = target.Moving ? 1.4f : 1f;         // a moving target is harder to bracket
             float ranged = 1f - 0.6f * RangedIn(shooter, target);  // up to 60% tighter when ranged-in

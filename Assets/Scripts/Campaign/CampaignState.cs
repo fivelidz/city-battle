@@ -39,6 +39,16 @@ namespace CityBattle.Campaign
         public float Budget = 50000f;            // build/maintenance currency
         public float ResearchPointsPerMonth = 120f;
 
+        // ---- Strategic layer (RtW3): prestige, victory points, tension ----
+        public float Prestige = 50f;             // 0..100. Hit 0 = removed from command (game over).
+        public int VictoryPoints = 0;            // current war VP (you)
+        public int EnemyVictoryPoints = 0;       // current war VP (enemy)
+        public bool AtWar = false;
+        public int WarEnemyNationId = -1;
+        public int VictoryTarget = 25;           // first to this VP wins the war
+        public readonly Dictionary<int, int> Tension = new();   // nationId -> 0..13 (13 = war)
+        public bool RemovedFromCommand => Prestige <= 0f;
+
         public readonly List<ProductionItem> ProductionQueue = new();
         public readonly List<RosterUnit> Roster = new();
         public readonly List<MechaDesign> Designs = new();
@@ -53,9 +63,45 @@ namespace CityBattle.Campaign
             Year = nation.startingYear > 0 ? nation.startingYear : 2025;
             Research.ResearchSpeed = nation.researchSpeed <= 0 ? 1f : nation.researchSpeed;
             Research.GrantStartingTech(tree);
+            Prestige = 50f; VictoryPoints = 0; EnemyVictoryPoints = 0; AtWar = false;
+            Tension.Clear();
+            foreach (var n in db.Nations) if (n.id != nationId) Tension[n.id] = _rng.RangeInt(1, 5);
         }
 
         public NationDef Nation(Database db) => db.NationById(PlayerNationId);
+
+        // ---- Strategic layer (prestige / VP / tension) ----
+
+        public void AddPrestige(float delta) => Prestige = Mathf.Clamp(Prestige + delta, 0f, 100f);
+
+        /// <summary>Resolve a battle/mission outcome: award/deduct VP and prestige, check war end.</summary>
+        public void ResolveMission(bool won, int vp, float prestigeDelta)
+        {
+            if (won) VictoryPoints += vp; else EnemyVictoryPoints += vp;
+            AddPrestige(won ? prestigeDelta : -prestigeDelta);
+            if (AtWar && (VictoryPoints >= VictoryTarget || EnemyVictoryPoints >= VictoryTarget))
+            {
+                bool playerWon = VictoryPoints >= EnemyVictoryPoints;
+                AddPrestige(playerWon ? 12f : -12f);
+                if (WarEnemyNationId >= 0) Tension[WarEnemyNationId] = playerWon ? 3 : 6;
+                AtWar = false; WarEnemyNationId = -1; VictoryPoints = 0; EnemyVictoryPoints = 0;
+            }
+        }
+
+        /// <summary>Refusing an offered battle costs VP and prestige (RtW).</summary>
+        public void RefuseMission(int vpToEnemy = 3, float prestigeCost = 4f)
+        {
+            EnemyVictoryPoints += vpToEnemy; AddPrestige(-prestigeCost);
+        }
+
+        /// <summary>Adjust tension with a nation; reaching 13 declares war.</summary>
+        public void AdjustTension(int nationId, int delta)
+        {
+            if (!Tension.ContainsKey(nationId)) Tension[nationId] = 0;
+            Tension[nationId] = Mathf.Clamp(Tension[nationId] + delta, 0, 13);
+            if (Tension[nationId] >= 13 && !AtWar)
+            { AtWar = true; WarEnemyNationId = nationId; VictoryPoints = 0; EnemyVictoryPoints = 0; }
+        }
 
         // ---- Production ----
 
@@ -100,6 +146,14 @@ namespace CityBattle.Campaign
             float points = ResearchPointsPerMonth * (Nation(db).researchSpeed <= 0 ? 1f : Nation(db).researchSpeed);
             var completed = Research.Advance(tree, Year, points, _rng);
 
+            // Sustained negative treasury erodes prestige; tension drifts gently.
+            if (Budget < 0f) AddPrestige(-0.5f);
+            if (_rng.Chance(0.25f))
+            {
+                foreach (var n in new List<int>(Tension.Keys))
+                    Tension[n] = Mathf.Clamp(Tension[n] + _rng.RangeInt(-1, 2), 0, 13);
+            }
+
             // Calendar.
             Month++;
             if (Month > 12) { Month = 1; Year++; }
@@ -113,6 +167,8 @@ namespace CityBattle.Campaign
         {
             public int year, month, playerNationId;
             public float budget, rpm;
+            public float prestige; public int vp, evp, warEnemy; public bool atWar;
+            public List<int> tensionNations, tensionValues;
             public List<ProductionItem> queue;
             public List<RosterUnit> roster;
             public List<string> designJsons;
@@ -125,6 +181,9 @@ namespace CityBattle.Campaign
             {
                 year = Year, month = Month, playerNationId = PlayerNationId,
                 budget = Budget, rpm = ResearchPointsPerMonth,
+                prestige = Prestige, vp = VictoryPoints, evp = EnemyVictoryPoints,
+                warEnemy = WarEnemyNationId, atWar = AtWar,
+                tensionNations = new List<int>(Tension.Keys), tensionValues = new List<int>(Tension.Values),
                 queue = ProductionQueue, roster = Roster,
                 designJsons = new List<string>(), known = new List<int>(Research.Known)
             };
@@ -138,8 +197,14 @@ namespace CityBattle.Campaign
             var cs = new CampaignState
             {
                 Year = blob.year, Month = blob.month, PlayerNationId = blob.playerNationId,
-                Budget = blob.budget, ResearchPointsPerMonth = blob.rpm
+                Budget = blob.budget, ResearchPointsPerMonth = blob.rpm,
+                Prestige = blob.prestige <= 0 ? 50f : blob.prestige,
+                VictoryPoints = blob.vp, EnemyVictoryPoints = blob.evp,
+                WarEnemyNationId = blob.warEnemy, AtWar = blob.atWar
             };
+            if (blob.tensionNations != null)
+                for (int i = 0; i < blob.tensionNations.Count; i++)
+                    cs.Tension[blob.tensionNations[i]] = i < blob.tensionValues.Count ? blob.tensionValues[i] : 0;
             cs.ProductionQueue.AddRange(blob.queue ?? new List<ProductionItem>());
             cs.Roster.AddRange(blob.roster ?? new List<RosterUnit>());
             if (blob.designJsons != null)
