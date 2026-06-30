@@ -158,32 +158,50 @@
 
   function buildBuildings() {
     buildingsGroup = new THREE.Group();
-    var matLow = new THREE.MeshStandardMaterial({ color: 0x4b524b, roughness: 0.9, metalness: 0 });
-    var matMid = new THREE.MeshStandardMaterial({ color: 0x565d54, roughness: 0.88 });
-    var matHigh = new THREE.MeshStandardMaterial({ color: 0x646b60, roughness: 0.85 });
+    // Building footprints are in the SAME local-metre frame (x=east, z=north) as the terrain grid.
+    // Merge all footprints into ONE BufferGeometry for performance (18k buildings), extruded from
+    // each building's terrain base up to base+height. Vertex colour by height for a city look.
+    var verts = [], cols = [];
+    var lowC = [0.30, 0.33, 0.30], midC = [0.40, 0.43, 0.40], hiC = [0.55, 0.57, 0.55];
     var n = map.buildings.length;
     for (var i = 0; i < n; i++) {
       var b = map.buildings[i];
-      var mesh = extrude(b);
-      if (mesh) buildingsGroup.add(mesh);
+      addBuilding(b, verts, cols, lowC, midC, hiC);
     }
+    var bg = new THREE.BufferGeometry();
+    bg.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+    bg.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
+    bg.computeVertexNormals();
+    var bmesh = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.05 }));
+    buildingsGroup.add(bmesh);
     buildingsGroup.visible = show.bld;
     scene.add(buildingsGroup);
+  }
 
-    function extrude(b) {
-      var p = b.poly; if (!p || p.length < 3) return null;
-      var shape = new THREE.Shape();
-      shape.moveTo(p[0][0], p[0][1]);
-      for (var k = 1; k < p.length; k++) shape.lineTo(p[k][0], p[k][1]);
-      var h = Math.max(3, b.h || 8);
-      var g = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
-      g.rotateX(-Math.PI / 2);              // extrude up Y
-      var m = h > 60 ? matHigh : (h > 20 ? matMid : matLow);
-      var mesh = new THREE.Mesh(g, m);
-      mesh.position.y = b.base_m || 0;       // sit on terrain
-      return mesh;
+  // Triangulate a building footprint (fan) + extrude its walls; append to vert/col arrays.
+  function addBuilding(b, verts, cols, lowC, midC, hiC) {
+    var p = b.poly; if (!p || p.length < 3) return;
+    var base = b.base_m || 0;
+    var h = Math.max(3, b.h || 8);
+    var top = base + h;
+    var c = h > 60 ? hiC : (h > 20 ? midC : lowC);
+    var np = p.length;
+    // roof (triangle fan around vertex 0) at y=top
+    for (var k = 1; k < np - 1; k++) {
+      pushV(verts, cols, p[0][0], top, p[0][1], c);
+      pushV(verts, cols, p[k][0], top, p[k][1], c);
+      pushV(verts, cols, p[k+1][0], top, p[k+1][1], c);
+    }
+    // walls
+    var wc = [c[0]*0.8, c[1]*0.8, c[2]*0.8];
+    for (var j = 0; j < np; j++) {
+      var a = p[j], d = p[(j+1) % np];
+      // two triangles per wall quad (base->top)
+      pushV(verts, cols, a[0], base, a[1], wc); pushV(verts, cols, d[0], base, d[1], wc); pushV(verts, cols, d[0], top, d[1], wc);
+      pushV(verts, cols, a[0], base, a[1], wc); pushV(verts, cols, d[0], top, d[1], wc); pushV(verts, cols, a[0], top, a[1], wc);
     }
   }
+  function pushV(verts, cols, x, y, z, c) { verts.push(x, y, z); cols.push(c[0], c[1], c[2]); }
 
   // ---------- WEATHER: wind arrows + rain + readout ----------
   // Wind field points are in the SAME local-metre frame (x=east, z=north). u=east, v=north (m/s),
@@ -418,10 +436,12 @@
     sightM *= fogFactor();                                          // fog cuts it
     var ex = d.x, ez = d.z, ey = d.eye + 8;
     var rz = (map.size_m[1] / (res - 1));   // metres per grid row in z (north)
-    // The terrain texture is ALWAYS clearly readable. The viewshed is a SUBTLE overlay:
-    //   - VISIBLE areas         -> gentle warm gold lift     (vcol ~1.0 .. 1.18)
-    //   - HIDDEN-but-in-range    -> very slightly dimmed cool (vcol ~0.86)
-    //   - OUT-OF-RANGE          -> a touch dimmer still       (vcol ~0.78, still very legible)
+    // FOG OF WAR: areas the unit canNOT see are clearly SHADED OUT (dark/cold). Visible terrain
+    // stays bright & natural with a faint warm lift. This is the inverse of a subtle highlight -
+    // the hidden ground is obviously obscured so line-of-sight reads at a glance.
+    //   - VISIBLE (clear LOS, in range) -> bright, slight warm  (vcol ~1.05 .. 1.25)
+    //   - HIDDEN (blocked by terrain)    -> strongly shaded out  (vcol ~0.34, cold)
+    //   - OUT-OF-RANGE                   -> shaded out + colder   (vcol ~0.28)
     for (var zi = 0; zi < res; zi++) {
       for (var xi = 0; xi < res; xi++) {
         var idx = zi * res + xi;
@@ -429,17 +449,17 @@
         var dist = Math.hypot(wx - ex, wz - ez);
         var r, gg, bb;
         if (dist > sightM) {
-          // beyond sight: keep the map fully readable, only the faintest cool dim
-          r = 0.80; gg = 0.81; bb = 0.84;
+          // beyond sight range: shaded out, slightly cold/blue
+          r = 0.26; gg = 0.29; bb = 0.34;
         } else {
           var clear = losGrid(ex, ez, ey, wx, wz, H[idx] + 1, res, H, cell, rz);
           if (clear) {
-            // warm highlight that fades with distance but never washes the detail out
-            var lit = clamp(1 - (dist / sightM) * 0.7, 0.25, 1);  // strength of the glow
-            r = 1.0 + lit * 0.20; gg = 0.98 + lit * 0.16; bb = 0.86 + lit * 0.06;
+            // in view: bright & clear, gentle warm lift that eases with distance (fog/certainty)
+            var lit = clamp(1 - (dist / sightM) * 0.45, 0.45, 1);
+            r = 0.95 + lit * 0.30; gg = 0.95 + lit * 0.24; bb = 0.85 + lit * 0.12;
           } else {
-            // in range but blocked by terrain: only a gentle cool dim (NOT a black mask)
-            r = 0.84; gg = 0.85; bb = 0.88;
+            // in range but terrain-blocked: clearly shaded out (cold shadow)
+            r = 0.32; gg = 0.35; bb = 0.40;
           }
         }
         colors.setXYZ(idx, r, gg, bb);

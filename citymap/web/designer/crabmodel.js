@@ -5,7 +5,25 @@
    prow, raised aft superstructure, freeboard plating, splayed insectoid legs (coxa/
    femur/tibia with knees), a sensor mast, and turrets stepped fore-to-aft on the
    centreline. Each chassis class has a recognisable silhouette from afar.
-   Returns { group, sockets:[Vector3], turrets:[Mesh], lengthM, beam } for designer.js. */
+   Returns { group, sockets:[Vector3], turrets:[Mesh], lengthM, beam } for designer.js.
+
+   ===========================================================================
+   NAUTICAL CONVENTION (applies to all geometry in this file)
+   ---------------------------------------------------------------------------
+   The hull's LONG AXIS is the fore-aft (Z) axis. The crab is long & narrow and
+   "scuttles" along this axis like a crab walking sideways relative to its body.
+       +Z  = BOW   / FORE  (the pointed ram-prow, front of the ship)
+       -Z  = STERN / AFT   (the squared transom, rear of the ship)
+       +X  = STARBOARD     (right flank, looking forward)
+       -X  = PORT          (left flank, looking forward)
+        Y  = up (deck above keel)
+   LEGS are clustered at the BOW and STERN ends (fore & aft), gripping the ground
+   fore and aft so the crab moves along its long axis. The PORT/STARBOARD midships
+   flanks are LEFT CLEAR for broadside / secondary gun arcs - no legs amidships.
+   MAIN TURRETS sit on the centreline fore & aft (battleship A/B/X/Y layout);
+   SECONDARIES sit on the port/starboard midships flanks.
+   ===========================================================================
+*/
 (function (global) {
   "use strict";
   var T = global.THREE;
@@ -221,39 +239,78 @@
       }
     }
 
-    // ===================== TURRETS (centreline, fore->aft) ===================
+    // ===================== TURRETS (Rule the Waves layout) ===================
+    // RtW turret logic: heaviest guns become MAIN turrets on the CENTRELINE,
+    // placed FORE then AFT (battleship A/B + X/Y, superfiring). Remaining lighter
+    // guns become SECONDARIES on the PORT/STARBOARD MIDSHIPS flanks (now clear of
+    // legs), facing outboard for broadside arcs.
     var mounts = spec.mounts && spec.mounts.length ? spec.mounts : defaultMounts(cls, P.turrets);
-    var nT = Math.min(mounts.length, P.turrets);
     var deckY = standY + ht * 1.02;
-    // Siege = battleship layout: superfiring forward turrets (A over B), stepped up.
-    // Others = even spread along the forward 2/3 of the deck.
-    var siege = cls === "Siege";
-    for (var i = 0; i < nT; i++) {
-      var frac, riser;
-      if (siege) {
-        // cluster all guns on the foredeck, ahead of the tower, stepped up toward the bow
-        frac = 0.36 - i * 0.16;
-        riser = (nT - 1 - i) * ht * 0.5; // aft of the cluster sits higher (superfiring)
-      } else {
-        frac = nT === 1 ? 0.12 : (0.32 - (i / (nT - 1)) * 0.58);
-        riser = 0;
-      }
-      var tz = frac * L;
-      var cal = mounts[i] ? mounts[i].caliberMm : 105;
+
+    // Sort fitted guns heaviest-first so the big guns claim the main centreline mounts.
+    var ordered = mounts.map(function (m, i) { return { m: m, i: i }; })
+      .sort(function (a, b) { return (b.m.caliberMm || 0) - (a.m.caliberMm || 0); });
+
+    // How many MAIN centreline turrets this chassis carries (rest -> secondaries).
+    var maxMain = Math.min(P.turrets, ordered.length);
+    // Centreline placement plan: fore positions first (superfiring), then aft.
+    // foreN forward, aftN aft. Bias toward forward guns like most RtW designs.
+    var foreN = Math.ceil(maxMain / 2);
+    var aftN = maxMain - foreN;
+
+    // Forward centreline slots (superfiring A over B, stepped up toward the bow):
+    // closest to bow is highest. Z fractions of L.
+    function foreSlot(k, n) {
+      if (n === 1) return { z: 0.30 * L, riser: 0 };
+      // k=0 is the foremost/highest; subsequent step down & aft
+      return { z: (0.34 - k * 0.16) * L, riser: (n - 1 - k) * ht * 0.5 };
+    }
+    function aftSlot(k, n) {
+      if (n === 1) return { z: -0.32 * L, riser: 0 };
+      // k=0 nearest stern/highest (X over Y superfiring toward the transom)
+      return { z: (-0.30 - k * 0.16) * L, riser: (n - 1 - k) * ht * 0.5 };
+    }
+
+    var oi = 0;  // index into the heaviest-first ordered list
+    // place forward mains
+    for (var fk = 0; fk < foreN; fk++) {
+      var sF = foreSlot(fk, foreN);
+      buildTurret(ordered[oi++].m.caliberMm, 0, deckY + sF.riser, sF.z, 0);
+    }
+    // place aft mains
+    for (var ak = 0; ak < aftN; ak++) {
+      var sA = aftSlot(ak, aftN);
+      buildTurret(ordered[oi++].m.caliberMm, 0, deckY + sA.riser, sA.z, Math.PI);
+    }
+    // remaining guns -> midships secondaries on alternating port/starboard flanks
+    var secSide = 1, secRow = 0;
+    while (oi < ordered.length) {
+      var sx = secSide * beam * 0.46;                    // on the flank
+      var sz = (-0.04 - secRow * 0.14) * L;              // staggered amidships, slightly aft
+      buildTurret(ordered[oi++].m.caliberMm, sx, deckY - ht * 0.18, sz,
+                  secSide > 0 ? Math.PI / 2 : -Math.PI / 2, true);
+      if (secSide > 0) { secSide = -1; } else { secSide = 1; secRow++; }
+    }
+
+    // Build one turret (barbette + faceted box + scaled barrels) at (x,y,z),
+    // rotated yaw radians about Y. isSec shrinks secondaries a touch.
+    function buildTurret(cal, x, y, z, yaw, isSec) {
+      cal = cal || 105;
       var calN = Math.min(cal, 305) / 305;
-      var tSize = beam * (0.34 + calN * 0.34);
-      var tg = new T.Group(); tg.position.set(0, deckY + riser, tz); g.add(tg);
+      var scl = isSec ? 0.62 : 1.0;                       // secondaries are smaller mounts
+      var tSize = beam * (0.34 + calN * 0.34) * scl;
+      var tg = new T.Group(); tg.position.set(x, y, z); tg.rotation.y = yaw; g.add(tg);
       // barbette base
       var bar = new T.Mesh(new T.CylinderGeometry(tSize * 0.42, tSize * 0.48, ht * 0.24, 8), plateMat);
       bar.position.y = ht * 0.12; tg.add(bar);
       // faceted turret box (chamfered, low)
       var tTopY = ht * (0.4 + calN * 0.15);
-      var turret = new T.Mesh(new T.BoxGeometry(tSize, ht * (0.4 + calN * 0.3), tSize * 1.25), hullMat);
+      var turret = new T.Mesh(new T.BoxGeometry(tSize, ht * (0.4 + calN * 0.3) * scl, tSize * 1.25), hullMat);
       turret.position.y = tTopY; tg.add(turret);
       // barrel(s): length & thickness scale with calibre; twin barrels for big guns
-      var barLen = L * (0.16 + calN * 0.5);
-      var barR = beam * (0.022 + calN * 0.06);
-      var twin = calN > 0.55;
+      var barLen = L * (0.16 + calN * 0.5) * (isSec ? 0.7 : 1);
+      var barR = beam * (0.022 + calN * 0.06) * scl;
+      var twin = calN > 0.55 && !isSec;
       var barYs = twin ? [-barR * 1.4, barR * 1.4] : [0];
       for (var bk = 0; bk < barYs.length; bk++) {
         var barrel = new T.Mesh(new T.CylinderGeometry(barR, barR * 0.9, barLen, 8), darkMat);
@@ -267,7 +324,8 @@
         tg.add(muz);
       }
       turrets.push(tg);
-      sockets.push(new T.Vector3(0, deckY + riser + tTopY, tz));
+      // socket in WORLD-ish local coords (account for yaw so map effects fire from muzzle)
+      sockets.push(new T.Vector3(x, y + tTopY, z));
     }
 
     // ===================== LEGS (insectoid: coxa / femur / tibia) =============
@@ -302,50 +360,81 @@
     }
   }
 
-  // insectoid splayed legs in pairs, evenly spaced along the hull
+  // Insectoid splayed legs CLUSTERED AT THE BOW & STERN (fore & aft ends).
+  // The crab's long axis = fore/aft; legs grip fore and aft so it scuttles along
+  // that axis. The port/starboard MIDSHIPS flanks stay clear (broadside arcs).
+  // Total legs are split between a fore cluster (+Z) and an aft cluster (-Z);
+  // within each cluster legs are paired port/starboard and fanned forward/back
+  // (away from midships) so feet land around the ends of the hull for stability.
   function buildLegs(g, P, L, beam, standY, segMat, jointMat) {
-    var legPairs = Math.floor(P.legs / 2);
     var splay = P.splay;
     var legR = L * 0.011;
-    for (var side = -1; side <= 1; side += 2) {
-      for (var li = 0; li < legPairs; li++) {
-        var t = legPairs === 1 ? 0.5 : li / (legPairs - 1);
-        var lz = (t - 0.5) * L * 0.78;
-        // hip socket on the hull flank
-        var hipX = side * beam * 0.5;
-        var hipY = standY * 0.92;
 
-        var legGrp = new T.Group(); g.add(legGrp);
+    // Split the leg count fore/aft. With an odd total the extra leg goes aft
+    // (heavier stern / superstructure end needs the support).
+    var totalPairs = Math.floor(P.legs / 2);   // legs are mounted in port/stbd pairs
+    var aftPairs = Math.ceil(totalPairs / 2);
+    var forePairs = totalPairs - aftPairs;
+    if (forePairs === 0 && aftPairs > 1) { forePairs = 1; aftPairs -= 1; } // ensure both ends gripped
 
-        // COXA: short outward stub from the hull
-        var coxaLen = standY * 0.25 * splay;
-        var coxa = new T.Mesh(new T.CylinderGeometry(legR * 1.2, legR * 1.1, coxaLen, 6), segMat);
-        coxa.position.set(hipX + side * coxaLen * 0.5, hipY, lz);
-        coxa.rotation.z = side * Math.PI / 2;
-        legGrp.add(coxa);
-        var coxaEndX = hipX + side * coxaLen;
+    // Cluster anchor positions along the hull (fraction of L from centre).
+    // Fore cluster centred near the bow shoulder, aft cluster near the quarter.
+    var foreZc = L * 0.34;   // bow cluster centreline (just aft of the fine bow)
+    var aftZc = -L * 0.34;   // stern cluster centreline (forward of the transom)
+    // how far apart the legs within one cluster are spaced along Z (fore/aft fan)
+    var clusterSpan = L * 0.18;
 
-        // shoulder joint
-        addJoint(legGrp, coxaEndX, hipY, lz, legR * 1.5, jointMat);
+    buildCluster(forePairs, foreZc, +1);  // FORE cluster, fans toward bow (+Z)
+    buildCluster(aftPairs, aftZc, -1);     // AFT cluster, fans toward stern (-Z)
 
-        // FEMUR: angles up-and-out to the knee (the high crab-knee)
-        var kneeOutX = coxaEndX + side * standY * 0.55 * splay;
-        var kneeY = hipY + standY * 0.28;     // knee rises above the hip (crab posture)
-        var femur = strut(coxaEndX, hipY, lz, kneeOutX, kneeY, lz, legR, segMat);
-        legGrp.add(femur);
+    // dir = +1 for fore cluster (feet kick toward bow), -1 for aft (toward stern)
+    function buildCluster(pairs, zCentre, dir) {
+      for (var side = -1; side <= 1; side += 2) {        // -1 = port, +1 = starboard
+        for (var li = 0; li < pairs; li++) {
+          // fan legs in the cluster along Z: spread from -span/2 .. +span/2,
+          // biased outward toward the end of the hull (dir).
+          var f = pairs === 1 ? 0 : (li / (pairs - 1) - 0.5);   // -0.5..0.5
+          var hipZ = zCentre + f * clusterSpan;
+          // outboard fan: the further-out legs reach further fore/aft
+          var footZ = hipZ + dir * standY * 0.45 * splay + f * clusterSpan * 0.6;
 
-        // knee joint
-        addJoint(legGrp, kneeOutX, kneeY, lz, legR * 1.4, jointMat);
+          // hip socket on the hull flank at the cluster's Z
+          var hipX = side * beam * 0.5;
+          var hipY = standY * 0.92;
 
-        // TIBIA: drops down-and-out to a pointed foot on the ground
-        var footX = kneeOutX + side * standY * 0.32 * splay;
-        var tibia = strut(kneeOutX, kneeY, lz, footX, 0.0, lz, legR * 0.85, segMat);
-        legGrp.add(tibia);
+          var legGrp = new T.Group(); g.add(legGrp);
 
-        // pointed foot (cone) digging into ground
-        var foot = new T.Mesh(new T.ConeGeometry(legR * 2.0, standY * 0.18, 5), jointMat);
-        foot.position.set(footX, standY * 0.05, lz);
-        legGrp.add(foot);
+          // COXA: short outward stub from the hull flank
+          var coxaLen = standY * 0.25 * splay;
+          var coxa = new T.Mesh(new T.CylinderGeometry(legR * 1.2, legR * 1.1, coxaLen, 6), segMat);
+          coxa.position.set(hipX + side * coxaLen * 0.5, hipY, hipZ);
+          coxa.rotation.z = side * Math.PI / 2;
+          legGrp.add(coxa);
+          var coxaEndX = hipX + side * coxaLen;
+
+          // shoulder joint
+          addJoint(legGrp, coxaEndX, hipY, hipZ, legR * 1.5, jointMat);
+
+          // FEMUR: angles up-and-out to the high crab-knee, also reaching fore/aft
+          var kneeOutX = coxaEndX + side * standY * 0.55 * splay;
+          var kneeY = hipY + standY * 0.28;            // knee rises above the hip
+          var kneeZ = hipZ + dir * standY * 0.22 * splay; // knee already reaches toward the end
+          var femur = strut(coxaEndX, hipY, hipZ, kneeOutX, kneeY, kneeZ, legR, segMat);
+          legGrp.add(femur);
+
+          // knee joint
+          addJoint(legGrp, kneeOutX, kneeY, kneeZ, legR * 1.4, jointMat);
+
+          // TIBIA: drops down-and-out-and-fore/aft to a pointed foot on the ground
+          var footX = kneeOutX + side * standY * 0.32 * splay;
+          var tibia = strut(kneeOutX, kneeY, kneeZ, footX, 0.0, footZ, legR * 0.85, segMat);
+          legGrp.add(tibia);
+
+          // pointed foot (cone) digging into ground at the fore/aft reach point
+          var foot = new T.Mesh(new T.ConeGeometry(legR * 2.0, standY * 0.18, 5), jointMat);
+          foot.position.set(footX, standY * 0.05, footZ);
+          legGrp.add(foot);
+        }
       }
     }
   }
@@ -376,10 +465,19 @@
     return (r << 16) | (g << 8) | b;
   }
 
+  // Default loadout for the gallery: n MAIN-calibre turrets (centreline fore/aft)
+  // plus a couple of lighter SECONDARY mounts (midships port/starboard) so the
+  // full Rule-the-Waves layout reads. Larger ships carry more secondaries.
   function defaultMounts(cls, n) {
     var cal = cls === "Siege" ? 305 : cls === "Spider" ? 203 : cls === "Line" ? 155 :
               cls === "Skirmisher" ? 90 : cls === "Carrier" ? 127 : 57;
-    var out = []; for (var i = 0; i < n; i++) out.push({ caliberMm: cal, arc: 360 });
+    var secCal = cls === "Siege" ? 127 : cls === "Spider" ? 105 : cls === "Line" ? 90 :
+                 cls === "Skirmisher" ? 57 : cls === "Carrier" ? 76 : 40;
+    var secN = cls === "Siege" ? 4 : cls === "Spider" ? 4 : cls === "Line" ? 2 :
+               cls === "Carrier" ? 2 : cls === "Skirmisher" ? 2 : 0;
+    var out = [];
+    for (var i = 0; i < n; i++) out.push({ caliberMm: cal, arc: 360 });          // mains
+    for (var s = 0; s < secN; s++) out.push({ caliberMm: secCal, arc: 180 });    // secondaries
     return out;
   }
 

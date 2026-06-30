@@ -158,6 +158,156 @@
   function renderAll() {
     renderChassis(); renderArmor(); renderArmorScheme(); renderMounts(); renderModules(); renderAnalysis();
     rebuildModel();
+    drawSchematic();
+  }
+
+  // ---------- LOADOUT SCHEMATIC (top-down crab silhouette) ----------
+  // Mirrors crabmodel.js's Rule-the-Waves layout: mains on the centreline fore/aft
+  // (superfiring), secondaries on the port/starboard midships flanks, leg clusters
+  // at the bow & stern, module pods amidships, armour zones labelled
+  // (BOW / STERN / PORT / STARBOARD / DECK). bow points UP (toward +Z).
+  function drawSchematic() {
+    var cv = document.getElementById("schematic");
+    if (!cv) return;
+    var ctx = cv.getContext("2d");
+    var W = cv.width, H = cv.height;
+    ctx.clearRect(0, 0, W, H);
+    var c = chassis();
+    var P = (window.CrabModel.CLASS_PROFILE[c.cls] || window.CrabModel.CLASS_PROFILE.Line);
+
+    // hull footprint (narrow but readable; beam exaggerated for a schematic),
+    // bow at top. Map ship Z(+bow) -> canvas Y(up).
+    var cx = W * 0.5;
+    var hullLen = H * 0.82;
+    var hullW = Math.max(46, Math.min(96, hullLen * P.beam * 1.15));
+    var topY = (H - hullLen) / 2, botY = topY + hullLen;
+    // ship-Z fraction (-0.5..0.5) -> canvas Y. +0.5=bow=top.
+    function zy(frac) { return botY - (frac + 0.5) * hullLen; }
+    function sx(xfrac) { return cx + xfrac * hullW; }   // xfrac: -0.5 port .. 0.5 stbd
+
+    // ---- hull silhouette (pointed bow, squared stern, slight tumblehome) ----
+    ctx.beginPath();
+    ctx.moveTo(cx, zy(0.52));                 // bow tip
+    ctx.lineTo(sx(0.5), zy(0.30));
+    ctx.lineTo(sx(0.5), zy(-0.42));
+    ctx.lineTo(sx(0.4), zy(-0.5));            // transom corner stbd
+    ctx.lineTo(sx(-0.4), zy(-0.5));           // transom corner port
+    ctx.lineTo(sx(-0.5), zy(-0.42));
+    ctx.lineTo(sx(-0.5), zy(0.30));
+    ctx.closePath();
+    ctx.fillStyle = "rgba(38,52,46,.55)";
+    ctx.strokeStyle = "rgba(120,140,130,.5)"; ctx.lineWidth = 1.2;
+    ctx.fill(); ctx.stroke();
+
+    // ---- armour zones (translucent fills + labels) ----
+    ctx.save();
+    ctx.font = "8px 'DejaVu Sans Mono',monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    function zoneLabel(txt, mm, x, y) {
+      ctx.fillStyle = "rgba(110,176,160,.85)";
+      ctx.fillText(txt, x, y);
+      ctx.fillStyle = "rgba(93,109,100,.9)";
+      ctx.fillText(mm + "mm", x, y + 9);
+    }
+    var Z = design.zones;
+    // bow / glacis (front) - label inside the foredeck, ahead of the fore turret
+    zoneLabel("BOW", Z.glacis, cx, zy(0.45));
+    // stern (uses flank value as proxy for rear plating) - on the afterdeck
+    zoneLabel("STERN", Z.flank, cx, zy(-0.40));
+    // deck / carapace (centre) - on the centreline amidships
+    zoneLabel("DECK", Z.carapace, cx, zy(0.14));
+    // port / starboard flanks (rotated labels), placed OUTSIDE each flank
+    ctx.save(); ctx.translate(sx(-0.5) - 14, zy(-0.18)); ctx.rotate(-Math.PI / 2);
+    zoneLabel("PORT", Z.flank, 0, 0); ctx.restore();
+    ctx.save(); ctx.translate(sx(0.5) + 14, zy(-0.18)); ctx.rotate(Math.PI / 2);
+    zoneLabel("STBD", Z.flank, 0, 0); ctx.restore();
+    ctx.restore();
+
+    // ---- LEG CLUSTERS at bow & stern (mirror buildLegs split) ----
+    var totalPairs = Math.floor(c.legs / 2);
+    var aftPairs = Math.ceil(totalPairs / 2), forePairs = totalPairs - aftPairs;
+    if (forePairs === 0 && aftPairs > 1) { forePairs = 1; aftPairs -= 1; }
+    drawLegCluster(forePairs, 0.34, 1);
+    drawLegCluster(aftPairs, -0.34, -1);
+    function drawLegCluster(pairs, zc, dir) {
+      ctx.fillStyle = "#2c3a34"; ctx.strokeStyle = "rgba(120,140,130,.45)"; ctx.lineWidth = 1;
+      for (var side = -1; side <= 1; side += 2) {
+        for (var li = 0; li < pairs; li++) {
+          var f = pairs === 1 ? 0 : (li / (pairs - 1) - 0.5);
+          var hipFrac = zc + f * 0.18;
+          var footFrac = hipFrac + dir * 0.16 + f * 0.11;
+          var hx = sx(side * 0.5), hy = zy(hipFrac);
+          var fx = sx(side * 0.92), fy = zy(footFrac);
+          ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(fx, fy); ctx.stroke();
+          ctx.beginPath(); ctx.arc(fx, fy, 2.6, 0, 7); ctx.fill();
+        }
+      }
+    }
+
+    // ---- TURRETS: mains centreline fore/aft, secondaries on flanks ----
+    var mounts = design.guns.map(function (id) {
+      var g = DB.guns.find(function (x) { return x.id === id; }); return g ? g.cal : 0;
+    });
+    var ordered = mounts.slice().sort(function (a, b) { return b - a; });
+    var maxMain = Math.min(P.turrets, ordered.length);
+    var foreN = Math.ceil(maxMain / 2), aftN = maxMain - foreN;
+    var oi = 0;
+    for (var fk = 0; fk < foreN; fk++) {
+      var zf = foreN === 1 ? 0.30 : (0.34 - fk * 0.16);
+      drawTurret(0, zf, ordered[oi++], false, 0);
+    }
+    for (var ak = 0; ak < aftN; ak++) {
+      var za = aftN === 1 ? -0.32 : (-0.30 - ak * 0.16);
+      drawTurret(0, za, ordered[oi++], false, Math.PI);
+    }
+    var secSide = 1, secRow = 0;
+    while (oi < ordered.length) {
+      drawTurret(secSide * 0.42, -0.04 - secRow * 0.14, ordered[oi++], true,
+                 secSide > 0 ? Math.PI / 2 : -Math.PI / 2);
+      if (secSide > 0) secSide = -1; else { secSide = 1; secRow++; }
+    }
+    function drawTurret(xfrac, zfrac, cal, isSec, yaw) {
+      var calN = Math.min(cal || 60, 305) / 305;
+      var r = (isSec ? 4 : 7) + calN * 6;
+      var px = sx(xfrac), py = zy(zfrac);
+      // barbette circle
+      ctx.beginPath(); ctx.arc(px, py, r, 0, 7);
+      ctx.fillStyle = isSec ? "#7d5a2a" : "#3e7a74";
+      ctx.strokeStyle = "rgba(20,24,20,.9)"; ctx.lineWidth = 1; ctx.fill(); ctx.stroke();
+      // barrel(s) pointing in yaw dir (canvas: bow=up => angle from +Y)
+      var bl = r + 6 + calN * 10;
+      var dx = Math.sin(yaw), dy = -Math.cos(yaw); // yaw 0 -> up (toward bow)
+      ctx.strokeStyle = "#11140f"; ctx.lineWidth = calN > 0.55 && !isSec ? 2.4 : 1.8;
+      var off = (calN > 0.55 && !isSec) ? 2.2 : 0;
+      var perpx = -dy, perpy = dx;
+      [-off, off].forEach(function (o) {
+        if (o === 0 && off !== 0) return;
+        ctx.beginPath();
+        ctx.moveTo(px + perpx * o, py + perpy * o);
+        ctx.lineTo(px + dx * bl + perpx * o, py + dy * bl + perpy * o);
+        ctx.stroke();
+      });
+    }
+
+    // ---- MODULE PODS amidships (port/stbd pairs) ----
+    var nMod = design.modules;
+    ctx.fillStyle = "#5a6258"; ctx.strokeStyle = "rgba(112,176,160,.5)"; ctx.lineWidth = 1;
+    for (var m = 0; m < nMod; m++) {
+      var col = (m % 2) ? 1 : -1, row = Math.floor(m / 2);
+      var mx = sx(col * 0.28), my = zy(0.0 - row * 0.09);
+      ctx.fillRect(mx - 4, my - 5, 8, 10); ctx.strokeRect(mx - 4, my - 5, 8, 10);
+    }
+
+    // ---- header annotations: bow arrow + filled-mount tally ----
+    ctx.fillStyle = "rgba(176,130,44,.9)";
+    ctx.font = "9px 'DejaVu Sans Mono',monospace"; ctx.textAlign = "left";
+    ctx.fillText("\u25B2 BOW", 6, 12);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(93,109,100,.95)";
+    ctx.fillText(maxMain + " MAIN \u00b7 " + Math.max(0, ordered.length - maxMain) +
+                 " SEC \u00b7 " + nMod + " MOD", W - 6, 12);
+    ctx.textAlign = "center";
+    ctx.fillText("STERN \u25BC", cx, H - 5);
   }
 
   function renderChassis() {

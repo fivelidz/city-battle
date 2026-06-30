@@ -56,6 +56,15 @@
   .err{color:var(--red);font-size:10px;line-height:1.5;margin-top:3px}
   .warnmsg{color:var(--amber);font-size:10px;line-height:1.5}
   ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:rgba(120,140,130,.25)}
+  /* loadout schematic panel (centre-bottom): top-down crab silhouette */
+  #loadout{bottom:10px;left:50%;transform:translateX(-50%);width:430px;z-index:9}
+  #loadout .body{padding:8px 10px 4px}
+  #schematic{display:block;width:100%;height:188px;background:rgba(8,11,10,.5);
+    border:1px solid var(--hair)}
+  #loadLegend{display:flex;flex-wrap:wrap;gap:6px 12px;padding:6px 10px 8px;
+    font-size:9.5px;color:var(--dim);letter-spacing:.06em}
+  #loadLegend span{display:flex;align-items:center;gap:4px}
+  #loadLegend i{width:9px;height:9px;display:inline-block;border:1px solid rgba(120,140,130,.3)}
 </style>
 </head>
 <body>
@@ -91,6 +100,18 @@
     <div class="row" style="margin-top:6px"><span class="k">YEAR</span><span class="v" id="yearVal">2035</span></div>
     <div class="stepper"><span class="nm">research year</span>
       <button class="sbtn" id="yrDown">&minus;</button><span class="sval" id="yrShow">2035</span><button class="sbtn" id="yrUp">+</button></div>
+  </div>
+</div>
+
+<div class="panel" id="loadout">
+  <div class="hdr">Loadout Schematic &mdash; top-down (bow &uarr;)</div>
+  <div class="body"><canvas id="schematic" width="430" height="188"></canvas></div>
+  <div id="loadLegend">
+    <span><i style="background:#3e7a74"></i>MAIN turret</span>
+    <span><i style="background:#7d5a2a"></i>SECONDARY</span>
+    <span><i style="background:#5a6258"></i>MODULE pod</span>
+    <span><i style="background:#2c3a34"></i>LEG cluster</span>
+    <span><i style="background:rgba(110,176,160,.25)"></i>armour zone</span>
   </div>
 </div>
 
