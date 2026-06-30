@@ -126,6 +126,25 @@
   var buildingMeshes = [];    // chunked building meshes (for fog-cull); fallback: single merged mesh
   var buildingChunks = [];    // [{mesh, cx, cz, top}] centroid metadata per chunk for fog-cull
 
+  // ===========================================================================
+  // COMMAND MODE state (the playable layer on top of the review viewer).
+  //  - cmd.on        : command mode UI is active (flags, sim loop, orders)
+  //  - cmd.playing   : the movement + combat sim is running (else paused — give orders first)
+  //  - cmd.flagType  : the order type the next right-click drops ("move"|"hold"|"attack")
+  //  - cmd.flagship  : the designated friendly command/flagship unit (comms net root)
+  //  - cmd.scenario  : current scenario key ("" = free deploy)
+  //  - cmd.selectedSet : multi-select for formation moves
+  // Each unit gets userData.cmd = { flags:[{x,z,type,group}], targetIdx, struct, ko, speed,
+  //                                 firingTo, fireGroup } when command mode initialises.
+  // ===========================================================================
+  var cmd = {
+    on: false, playing: false, flagType: "move", flagship: null, scenario: "",
+    selectedSet: [], objective: null, flagGroup: null, orderGroup: null, fxGroup: null,
+    forceScenario: QS.get("scenario") || "", forcePlay: QS.get("play") === "1",
+    netStat: "", flagshipOffNet: false,
+  };
+  var FLAG_COL = { move: 0x5fd6c6, hold: 0xe8a838, attack: 0xd75a52, objective: 0x7fe6a0 };
+
   // ---------- boot ----------
   function init() {
     var canvas = document.getElementById("c");
@@ -156,6 +175,7 @@
     bindFly();
     addEventListener("resize", onResize);
     renderer.domElement.addEventListener("click", onClick);
+    renderer.domElement.addEventListener("contextmenu", onContext);
     var startCity = QS.get("city");
     if (!startCity || !CITIES.some(function (c) { return c[0] === startCity; })) startCity = "sydney";
     loadCity(startCity);   // default to the large 32km theatre (override with ?city=sydney_harbour)
@@ -185,11 +205,14 @@
   }
 
   function clearScene() {
-    [terrainMesh, buildingsGroup, unitsGroup, overlayGroup, wireMesh, windGroup, rainGroup, suburbGroup, fireGroup].forEach(function (o) {
+    [terrainMesh, buildingsGroup, unitsGroup, overlayGroup, wireMesh, windGroup, rainGroup, suburbGroup, fireGroup,
+     cmd.flagGroup, cmd.orderGroup, cmd.fxGroup].forEach(function (o) {
       if (o) { scene.remove(o); }
     });
     terrainMesh = buildingsGroup = unitsGroup = overlayGroup = wireMesh = null;
     windGroup = rainGroup = suburbGroup = fireGroup = null;
+    cmd.flagGroup = cmd.orderGroup = cmd.fxGroup = null;
+    cmd.flagship = null; cmd.selectedSet = []; cmd.objective = null;
     buildingMeshes = []; buildingChunks = [];
     units = []; selected = null;
     document.getElementById("unit").style.display = "none";
@@ -253,6 +276,11 @@
     selected = units[0] || null;     // select a unit so the viewshed shows on load
     if (selected) selectUnit(selected);
     rebuildOverlays();
+
+    // ----- COMMAND MODE: command groups + (optional) forced scenario / autoplay -----
+    initCommand();
+    if (cmd.forceScenario) { setCommandMode(true); loadScenario(cmd.forceScenario); }
+    if (cmd.forcePlay) { setCommandMode(true); setPlaying(true); autoIssueDemoOrders(); }
 
     // ----- camera framing -----
     frameCamera();
@@ -1185,13 +1213,13 @@
 
     // narrow tapered hull (a stretched, pointed box -> destroyer silhouette)
     var hull = new THREE.Mesh(new THREE.BoxGeometry(beamW, unitLen * 0.16, unitLen), bodyMat);
-    hull.position.y = unitLen * 0.16; g.add(hull);
+    hull.position.y = unitLen * 0.16; hull.userData._isHull = true; g.add(hull);
     var prow = new THREE.Mesh(new THREE.ConeGeometry(beamW * 0.5, unitLen * 0.35, 4), bodyMat);
     prow.rotation.x = -Math.PI / 2; prow.rotation.y = Math.PI / 4;
-    prow.position.set(0, unitLen * 0.16, unitLen * 0.6); g.add(prow);
+    prow.position.set(0, unitLen * 0.16, unitLen * 0.6); prow.userData._isHull = true; g.add(prow);
     // low central turret + thin long barrel (the gun) pointing forward
     var tur = new THREE.Mesh(new THREE.BoxGeometry(beamW * 0.7, unitLen * 0.12, unitLen * 0.3), bodyMat);
-    tur.position.y = unitLen * 0.26; g.add(tur);
+    tur.position.y = unitLen * 0.26; tur.userData._isHull = true; g.add(tur);
     var barrel = new THREE.Mesh(new THREE.CylinderGeometry(beamW * 0.08, beamW * 0.08, unitLen * 0.7, 6), dark);
     barrel.rotation.x = Math.PI / 2; barrel.position.set(0, unitLen * 0.26, unitLen * 0.5); g.add(barrel);
     // skinny crab legs along the sides (thin)
@@ -1253,7 +1281,8 @@
 
     g.userData = { name: name, side: side, cls: cls, gun: gun, rangeM: rangeM, note: note, x: x, z: z, eye: y + unitLen * 0.3,
                    marker: marker, mkMat: mkMat, halo: halo, haloMat: haloMat, label: label, labelMat: label.material,
-                   offRing: offRing, offTag: offTag, baseMkY: marker.position.y, mkSize: mkSize };
+                   offRing: offRing, offTag: offTag, baseMkY: marker.position.y, mkSize: mkSize,
+                   _eyeOff: unitLen * 0.3, struct: 100 };
     unitsGroup.add(g);
     units.push(g);
   }
@@ -1505,12 +1534,15 @@
   // dashed red "NO COMMS" loop, and ghost-labelled. Readout: "COMMS: N/M units on net".
   // ===========================================================================
   function buildCommsNet(sel) {
-    var friends = units.filter(function (g) { return g.userData.side === "friend"; });
-    // command node = selected if it's friendly, else the first friendly
-    var cmd = (sel && sel.userData.side === "friend") ? sel : friends[0];
+    var friends = units.filter(function (g) { return g.userData.side === "friend" && !(g.userData.cmd && g.userData.cmd.ko); });
+    // command node = the FLAGSHIP if set & alive (command mode), else selected friendly, else first
+    var cmdNode = (cmd.flagship && cmd.flagship.userData.side === "friend" && !cmd.flagship.userData.cmd.ko && friends.indexOf(cmd.flagship) >= 0)
+      ? cmd.flagship
+      : ((sel && sel.userData.side === "friend") ? sel : friends[0]);
+    var cmdLocal = cmdNode;   // (renamed to avoid shadowing the global `cmd` command state)
     var onNet = {};   // index in `friends` -> true
-    if (cmd) {
-      var ci = friends.indexOf(cmd);
+    if (cmdLocal) {
+      var ci = friends.indexOf(cmdLocal);
       onNet[ci] = true;
       var frontier = [ci];
       // BFS over the friendly LOS graph (comms range = generous; laser link is long-range)
@@ -1547,7 +1579,7 @@
     for (var f = 0; f < friends.length; f++) {
       var g = friends[f], on = !!onNet[f];
       g.userData._onNet = on;
-      g.userData._isCmd = (g === cmd);
+      g.userData._isCmd = (g === cmdLocal);
       if (on) nOn++;
       setOffNet(g, !on);
     }
@@ -1558,6 +1590,13 @@
     if (statEl) statEl.textContent = nOn + "/" + friends.length + " on net";
     var topEl = document.getElementById("commsTop");
     if (topEl) { topEl.style.display = "inline"; topEl.textContent = "COMMS: " + nOn + "/" + friends.length + " ON NET"; }
+    // feed the command panel: net status + flagship-off-net warning
+    cmd.netStat = nOn + "/" + friends.length + " on net";
+    if (cmd.flagship) {
+      var fi = friends.indexOf(cmd.flagship);
+      cmd.flagshipOffNet = (fi < 0) || !onNet[fi];   // flagship lost or off the net
+    }
+    syncCommandPanel();
     // refresh inspect-panel comms line if a unit is open
     if (selected) refreshCommsLine(selected);
   }
@@ -1591,6 +1630,9 @@
     if (statEl) statEl.textContent = "--";
     var topEl = document.getElementById("commsTop");
     if (topEl) topEl.style.display = "none";
+    cmd.netStat = "";
+    if (cmd.flagship) cmd.flagshipOffNet = cmd.flagship.userData.cmd && cmd.flagship.userData.cmd.ko;
+    syncCommandPanel();
     if (selected) refreshCommsLine(selected);
   }
 
@@ -1621,9 +1663,63 @@
     var hits = raycaster.intersectObjects(units, true);
     if (hits.length) {
       var g = hits[0].object; while (g.parent && units.indexOf(g) < 0) g = g.parent;
-      if (units.indexOf(g) >= 0) { selectUnit(g); }
+      if (units.indexOf(g) >= 0) {
+        // command mode: SHIFT-click adds a friendly to the multi-select set (formation);
+        // clicking a hostile while a friendly is selected sets it as the engage TARGET.
+        if (cmd.on && e.shiftKey && g.userData.side === "friend") {
+          var idx = cmd.selectedSet.indexOf(g);
+          if (idx >= 0) cmd.selectedSet.splice(idx, 1); else cmd.selectedSet.push(g);
+          selectUnit(g);
+          return;
+        }
+        if (cmd.on && g.userData.side === "hostile" && selected && selected.userData.side === "friend") {
+          cmd.target = g;   // remembered for BEST POSITION
+          document.getElementById("status").textContent = "TARGET: " + g.userData.name;
+        }
+        if (!e.shiftKey) cmd.selectedSet = [g];
+        selectUnit(g);
+      }
     }
   }
+  // RIGHT-CLICK in command mode: drop an order flag on the terrain for the selected unit
+  // (or for the whole selectedSet as a formation), or clear a flag if a flag was clicked.
+  // SHIFT = chain a waypoint.
+  function onContext(e) {
+    if (!cmd.on) return;        // only active in command mode (normal context menu otherwise)
+    e.preventDefault();
+    mouse.x = (e.clientX / innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    // 1) did we right-click an existing flag? -> clear that unit's orders
+    if (cmd.flagGroup) {
+      var fhits = raycaster.intersectObjects(cmd.flagGroup.children, true);
+      if (fhits.length) {
+        var fg = fhits[0].object; while (fg.parent && !fg.userData.isFlag) fg = fg.parent;
+        if (fg.userData.isFlag && !fg.userData.isObjective) {
+          // find the unit owning this flag and clear its orders
+          units.forEach(function (g) {
+            if (g.userData.cmd && g.userData.cmd.flags.indexOf(fg) >= 0) clearOrders(g);
+          });
+          return;
+        }
+      }
+    }
+    // 2) raycast the terrain for a ground point
+    if (!terrainMesh) return;
+    var thits = raycaster.intersectObject(terrainMesh, false);
+    if (!thits.length) return;
+    var p = thits[0].point;
+    var x = clamp(p.x, 0, map.size_m[0]), z = clamp(p.z, 0, map.size_m[1]);
+    var shift = e.shiftKey;
+    // formation move if multiple units are in the set
+    if (cmd.selectedSet.length > 1 && !shift) { formationMove(x, z, cmd.flagType); return; }
+    if (selected && selected.userData.side === "friend") {
+      issueOrder(selected, x, z, cmd.flagType, shift);
+      document.getElementById("status").textContent =
+        (shift ? "WAYPOINT ADDED" : cmd.flagType.toUpperCase() + " ORDER ISSUED");
+    }
+  }
+
   function selectUnit(g) {
     selected = g; var d = g.userData;
     var p = document.getElementById("unit"); p.style.display = "block";
@@ -1632,12 +1728,13 @@
     var ident = d.side === "hostile" ? "HOSTILE (uncertain)" : d.side === "civ" ? "CIVILIAN" : "FRIENDLY";
     var ie = document.getElementById("uIdent"); ie.textContent = ident;
     ie.className = d.side === "hostile" ? "warn" : "k";
-    document.getElementById("uStruct").style.width = "100%";
+    document.getElementById("uStruct").style.width = (d.cmd ? Math.round(d.cmd.struct) : 100) + "%";
     document.getElementById("uGun").textContent = d.gun;
     document.getElementById("uRange").textContent = d.rangeM ? (d.rangeM / 1000).toFixed(1) + " km" : "n/a";
     document.getElementById("uNote").textContent = d.note;
     rebuildOverlays();
     refreshCommsLine(g);
+    if (typeof syncCommandPanel === "function") syncCommandPanel();
   }
 
   // Cycle the selection through FRIENDLY crabs with the , and . keys (player units first; if there
@@ -1789,6 +1886,42 @@
         else rebuildOverlays();
       };
     }
+
+    // ---- COMMAND MODE bindings ----
+    document.getElementById("tCmd").onclick = function () { setCommandMode(!cmd.on); };
+    var scenSel = document.getElementById("scenSel");
+    if (scenSel) scenSel.onchange = function () {
+      if (scenSel.value) loadScenario(scenSel.value);
+      else { cmd.scenario = ""; document.getElementById("cScen").textContent = "FREE DEPLOY"; }
+    };
+    document.getElementById("playBtn").onclick = function () { setPlaying(!cmd.playing); };
+    function setFlagType(t) {
+      cmd.flagType = t;
+      ["Move","Hold","Attack"].forEach(function (n) {
+        document.getElementById("ft" + n).classList.toggle("on", n.toLowerCase() === t);
+      });
+    }
+    document.getElementById("ftMove").onclick   = function () { setFlagType("move"); };
+    document.getElementById("ftHold").onclick   = function () { setFlagType("hold"); };
+    document.getElementById("ftAttack").onclick = function () { setFlagType("attack"); };
+    document.getElementById("cFlagshipBtn").onclick = function () {
+      if (selected && selected.userData.side === "friend") setFlagship(selected);
+      else autoPickFlagship();
+    };
+    document.getElementById("cBestBtn").onclick = function () {
+      var tgt = cmd.target || units.filter(function (g) { return g.userData.side === "hostile" && !g.userData.cmd.ko; })[0];
+      if (selected && selected.userData.side === "friend" && tgt) bestPosition(selected, tgt);
+      else document.getElementById("status").textContent = "SELECT A FRIENDLY + TARGET AN ENEMY";
+    };
+    document.getElementById("cClearBtn").onclick = function () {
+      if (selected) clearOrders(selected);
+    };
+    document.getElementById("cAllBtn").onclick = function () {
+      cmd.selectedSet = units.filter(function (g) { return g.userData.side === "friend" && !g.userData.cmd.ko; });
+      document.getElementById("status").textContent = "ALL FRIENDLY UNITS SELECTED (" + cmd.selectedSet.length + ")";
+    };
+    // expose for keyboard
+    cmd._setFlagType = setFlagType;
   }
   function dolly(f) {
     var dir = new THREE.Vector3().subVectors(camera.position, controls.target);
@@ -1810,6 +1943,13 @@
       // , / . cycle the selected unit (previous / next friendly crab). Skip if typing in the <select>.
       if ((e.key === "," || e.key === ".") && (!document.activeElement || document.activeElement.tagName !== "SELECT")) {
         cycleUnit(e.key === "," ? -1 : 1); e.preventDefault(); return;
+      }
+      // COMMAND MODE keys: 1/2/3 = flag type, SPACE = play/pause
+      if (cmd.on && (!document.activeElement || document.activeElement.tagName !== "SELECT")) {
+        if (k === "1") { if (cmd._setFlagType) cmd._setFlagType("move");   e.preventDefault(); return; }
+        if (k === "2") { if (cmd._setFlagType) cmd._setFlagType("hold");   e.preventDefault(); return; }
+        if (k === "3") { if (cmd._setFlagType) cmd._setFlagType("attack"); e.preventDefault(); return; }
+        if (e.key === " " || k === "spacebar") { setPlaying(!cmd.playing); e.preventDefault(); return; }
       }
       if (fly.on) {
         // movement keys: W/S fwd-back, A/D strafe, R/E up, Q down (F is the toggle, not descend)
@@ -1910,6 +2050,541 @@
     camera.lookAt(new THREE.Vector3().addVectors(camera.position, fwd));
   }
 
+  // ===========================================================================
+  // COMMAND MODE — the playable command demo: flags (orders), flagship, movement,
+  // engagement, formations and scenarios. Additive on top of the review viewer; all
+  // existing overlays keep working. The sim loop only runs when cmd.playing is true.
+  // ===========================================================================
+
+  // class -> ground speed (m/s, scaled so movement is watchable on an 11km map).
+  function classSpeed(cls) {
+    return cls === "Recon" ? 230 : cls === "Line" ? 160 : cls === "Siege" ? 95 :
+           cls === "Convoy" ? 70 : 175;
+  }
+
+  // Per-unit command state. Called once after units are placed.
+  function initCommand() {
+    cmd.flagGroup  = new THREE.Group(); scene.add(cmd.flagGroup);
+    cmd.orderGroup = new THREE.Group(); scene.add(cmd.orderGroup);
+    cmd.fxGroup    = new THREE.Group(); scene.add(cmd.fxGroup);
+    cmd.flagship = null; cmd.selectedSet = []; cmd.objective = null;
+    units.forEach(function (g) {
+      var d = g.userData;
+      d.cmd = { flags: [], targetIdx: 0, struct: d.struct != null ? d.struct : 100,
+                ko: false, speed: classSpeed(d.cls), firingTo: null, fireLine: null,
+                fireTimer: 0 };
+    });
+    syncCommandPanel();
+  }
+
+  function setCommandMode(on) {
+    cmd.on = on;
+    var p = document.getElementById("cmd");      if (p) p.style.display = on ? "block" : "none";
+    var h = document.getElementById("cmdHint");  if (h) h.style.display = on ? "block" : "none";
+    var s = document.getElementById("scenSel");  if (s) s.style.display = on ? "block" : "none";
+    var b = document.getElementById("tCmd");     if (b) b.classList.toggle("on", on);
+    if (cmd.flagGroup)  cmd.flagGroup.visible  = on;
+    if (cmd.orderGroup) cmd.orderGroup.visible  = on;
+    if (cmd.fxGroup)    cmd.fxGroup.visible     = on;
+    if (!on) { setPlaying(false); }
+    syncCommandPanel();
+  }
+
+  function setPlaying(on) {
+    cmd.playing = on;
+    var b = document.getElementById("playBtn");
+    if (b) { b.classList.toggle("playing", on); b.innerHTML = on ? "&#10073;&#10073; PAUSE" : "&#9654; PLAY"; }
+    var s = document.getElementById("cSim");
+    if (s) { s.textContent = on ? "RUNNING" : "PAUSED"; s.className = on ? "k" : "warn"; }
+  }
+
+  // ---- FLAGS (order objectives) -------------------------------------------------
+  // Build a flag mesh: a thin pole + a coloured pennant sprite at a terrain point.
+  function makeFlag(x, z, type, isObjective) {
+    var col = isObjective ? FLAG_COL.objective : (FLAG_COL[type] || FLAG_COL.move);
+    var span = Math.max(map.size_m[0], map.size_m[1]);
+    var poleH = Math.max(90, span * 0.013);
+    var grp = new THREE.Group();
+    var pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(poleH * 0.03, poleH * 0.03, poleH, 5),
+      new THREE.MeshBasicMaterial({ color: 0x1a1f1d }));
+    pole.position.y = poleH / 2; grp.add(pole);
+    // pennant sprite (triangle banner on a canvas)
+    var pen = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makePennantTexture(col, isObjective ? "OBJ" : type[0].toUpperCase()),
+      transparent: true, depthTest: false, depthWrite: false }));
+    var pw = poleH * 0.95;
+    pen.scale.set(pw, pw * 0.62, 1);
+    pen.position.set(pw * 0.42, poleH * 0.82, 0);
+    pen.renderOrder = 24; grp.add(pen);
+    // ground ring so the flag base reads on terrain
+    var ring = new THREE.Mesh(new THREE.RingGeometry(poleH * 0.18, poleH * 0.26, 20),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthTest: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 2; ring.renderOrder = 9; grp.add(ring);
+    grp.position.set(x, heightAt(clamp(x, 0, map.size_m[0]), clamp(z, 0, map.size_m[1])), z);
+    grp.userData = { isFlag: true, fx: x, fz: z, type: type, isObjective: isObjective, pennant: pen };
+    return grp;
+  }
+
+  function makePennantTexture(colInt, letter) {
+    var S = 128, cv = document.createElement("canvas"); cv.width = cv.height = S;
+    var ctx = cv.getContext("2d");
+    var c = "#" + ("000000" + colInt.toString(16)).slice(-6);
+    ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 6;
+    ctx.fillStyle = c; ctx.strokeStyle = "rgba(8,11,10,0.92)"; ctx.lineWidth = 6;
+    // pennant: a swallow-tail banner from left edge
+    ctx.beginPath();
+    ctx.moveTo(10, 14); ctx.lineTo(118, 30); ctx.lineTo(80, 50);
+    ctx.lineTo(118, 70); ctx.lineTo(10, 96); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0; ctx.fillStyle = "#0b0d0c";
+    ctx.font = "bold 42px DejaVu Sans Mono, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(letter, 48, 54);
+    var tex = new THREE.CanvasTexture(cv); tex.needsUpdate = true; return tex;
+  }
+
+  // Issue an order: drop a flag for a unit. waypoint=true chains it; else replaces.
+  function issueOrder(g, x, z, type, waypoint) {
+    if (!g || g.userData.side !== "friend") return;
+    var c = g.userData.cmd;
+    if (!waypoint) { clearOrders(g); }
+    var flag = makeFlag(x, z, type || cmd.flagType, false);
+    cmd.flagGroup.add(flag);
+    c.flags.push(flag);
+    if (!waypoint) c.targetIdx = 0;
+    drawOrderLines(g);
+  }
+
+  function clearOrders(g) {
+    var c = g.userData.cmd;
+    c.flags.forEach(function (f) { cmd.flagGroup.remove(f); });
+    c.flags = []; c.targetIdx = 0;
+    if (c.fireLine) { cmd.fxGroup.remove(c.fireLine); c.fireLine = null; }
+    c.firingTo = null;
+    drawOrderLines(g);
+  }
+
+  // Redraw the order/path lines for ALL friendly units (cheap; few units).
+  function drawOrderLines(_changed) {
+    if (!cmd.orderGroup) return;
+    while (cmd.orderGroup.children.length) cmd.orderGroup.remove(cmd.orderGroup.children[0]);
+    units.forEach(function (g) {
+      var d = g.userData, c = d.cmd;
+      if (!c || !c.flags.length || c.ko) return;
+      var col = FLAG_COL[c.flags[c.flags.length - 1].userData.type] || FLAG_COL.move;
+      // chain: unit -> flag[target] -> flag[...] in order
+      var pts = [new THREE.Vector3(d.x, heightAt(d.x, d.z) + 18, d.z)];
+      for (var i = c.targetIdx; i < c.flags.length; i++) {
+        var f = c.flags[i].userData;
+        pts.push(new THREE.Vector3(f.fx, heightAt(clamp(f.fx,0,map.size_m[0]), clamp(f.fz,0,map.size_m[1])) + 18, f.fz));
+      }
+      if (pts.length < 2) return;
+      var geo = new THREE.BufferGeometry().setFromPoints(pts);
+      var mat = new THREE.LineDashedMaterial({ color: col, transparent: true, opacity: 0.9,
+        dashSize: 80, gapSize: 50, depthTest: false });
+      var ln = new THREE.Line(geo, mat); ln.computeLineDistances(); ln.renderOrder = 14;
+      cmd.orderGroup.add(ln);
+    });
+  }
+
+  // ---- FLAGSHIP ----------------------------------------------------------------
+  function setFlagship(g) {
+    if (!g || g.userData.side !== "friend") return;
+    // remove old crown
+    if (cmd.flagship && cmd.flagship.userData.crown) {
+      cmd.flagship.remove(cmd.flagship.userData.crown);
+      cmd.flagship.userData.crown = null;
+      if (cmd.flagship.userData.flagTag) { cmd.flagship.remove(cmd.flagship.userData.flagTag); cmd.flagship.userData.flagTag = null; }
+    }
+    cmd.flagship = g;
+    var d = g.userData;
+    var span = Math.max(map.size_m[0], map.size_m[1]);
+    var crownTex = makeCrownTexture();
+    var crown = new THREE.Sprite(new THREE.SpriteMaterial({ map: crownTex, transparent: true, depthTest: false, depthWrite: false }));
+    var cs = d.mkSize * 0.62;
+    crown.scale.set(cs, cs, 1);
+    crown.position.set(0, d.baseMkY + d.mkSize * 0.62, 0);
+    crown.renderOrder = 25; g.add(crown); d.crown = crown;
+    var tag = makeTagSprite("FLAGSHIP", FLAG_COL.objective, span);
+    tag.position.set(0, d.baseMkY + d.mkSize * 1.25, 0);
+    tag.material.depthTest = false; tag.renderOrder = 25; g.add(tag); d.flagTag = tag;
+    // flagship is the comms command node — refresh net if comms overlay on
+    if (show.comms) rebuildOverlays();
+    syncCommandPanel();
+  }
+
+  function autoPickFlagship() {
+    // heaviest friendly: Siege > Line > others, then biggest gun range
+    var rank = { Siege: 3, Line: 2, Recon: 1 };
+    var best = null, bestScore = -1;
+    units.forEach(function (g) {
+      if (g.userData.side !== "friend" || g.userData.cmd.ko) return;
+      var s = (rank[g.userData.cls] || 0) * 1e6 + (g.userData.rangeM || 0);
+      if (s > bestScore) { bestScore = s; best = g; }
+    });
+    if (best) setFlagship(best);
+  }
+
+  function makeCrownTexture() {
+    var S = 128, cv = document.createElement("canvas"); cv.width = cv.height = S;
+    var ctx = cv.getContext("2d");
+    ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 6;
+    ctx.fillStyle = "#e8c84a"; ctx.strokeStyle = "rgba(8,11,10,0.9)"; ctx.lineWidth = 6;
+    // a 5-point star
+    var cx = S/2, cy = S/2, R = S*0.40, r = S*0.17;
+    ctx.beginPath();
+    for (var i = 0; i < 10; i++) {
+      var ang = -Math.PI/2 + i * Math.PI/5;
+      var rad = (i % 2 === 0) ? R : r;
+      var x = cx + Math.cos(ang)*rad, y = cy + Math.sin(ang)*rad;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    var tex = new THREE.CanvasTexture(cv); tex.needsUpdate = true; return tex;
+  }
+
+  // ---- MOVEMENT + COMBAT SIM (stepped only when cmd.playing) -------------------
+  var ARRIVE_M = 50;
+  function stepCommandSim(dt) {
+    if (!cmd.on || !cmd.playing) return;
+    dt = Math.min(dt, 0.1);
+    var moved = false;
+    units.forEach(function (g) {
+      var d = g.userData, c = d.cmd;
+      if (!c || c.ko) return;
+      // --- MOVEMENT toward current flag ---
+      if (c.flags.length && c.targetIdx < c.flags.length) {
+        var f = c.flags[c.targetIdx].userData;
+        var dx = f.fx - d.x, dz = f.fz - d.z;
+        var dist = Math.hypot(dx, dz);
+        if (dist <= ARRIVE_M) {
+          c.targetIdx++;
+          if (c.targetIdx >= c.flags.length) { moved = true; }   // arrived at last flag
+        } else {
+          var step = c.speed * dt;
+          if (step > dist) step = dist;
+          d.x += dx / dist * step; d.z += dz / dist * step;
+          var ny = heightAt(clamp(d.x,0,map.size_m[0]), clamp(d.z,0,map.size_m[1]));
+          g.position.set(d.x, ny, d.z);
+          d.eye = ny + d._eyeOff;
+          // face travel direction
+          g.rotation.y = Math.atan2(dx, dz);
+          moved = true;
+        }
+      }
+      // --- ENGAGEMENT ---
+      stepEngage(g, dt);
+    });
+    if (moved) { drawOrderLines(); }
+    // keep the selected unit's overlays roughly current without thrashing every frame
+    cmd._ovTimer = (cmd._ovTimer || 0) + dt;
+    if (moved && cmd._ovTimer > 0.5) { cmd._ovTimer = 0; if (selected) rebuildOverlays(); }
+    updateFiringFx();
+    checkFlagshipNet();
+  }
+
+  // Decide a unit's combat target and resolve damage over time.
+  function stepEngage(g, dt) {
+    var d = g.userData, c = d.cmd;
+    if (d.side === "civ" || d.rangeM <= 0) { c.firingTo = null; return; }
+    // attack flag => seek nearest enemy in range; else only engage if it's an enemy we already target
+    var lastFlag = c.flags.length ? c.flags[c.targetIdx >= c.flags.length ? c.flags.length-1 : c.targetIdx].userData : null;
+    var wantsAttack = (lastFlag && lastFlag.type === "attack") || c.flags.some(function(f){return f.userData.type==="attack";});
+    // friendly engages hostiles; hostile engages friendlies (so the demo fights back)
+    var enemySide = d.side === "friend" ? "hostile" : "friend";
+    var target = null, bestD = Infinity;
+    units.forEach(function (e) {
+      if (e === g) return;
+      var ed = e.userData;
+      if (ed.side !== enemySide || ed.cmd.ko) return;
+      var dist = Math.hypot(ed.x - d.x, ed.z - d.z);
+      if (dist > d.rangeM) return;
+      if (!hasLOS(d.x, d.z, d.eye, ed.x, ed.z, ed.eye)) return;
+      if (dist < bestD) { bestD = dist; target = e; }
+    });
+    // friendlies only auto-fire when they have an ATTACK order (or are the flagship leading);
+    // hostiles always defend. This keeps MOVE orders peaceful until told to engage.
+    var mayFire = (d.side === "hostile") || wantsAttack || d._engageAll;
+    if (target && mayFire) {
+      c.firingTo = target;
+      // hit model: per second, damage chance scales with closeness within range
+      var rangeFrac = bestD / d.rangeM;           // 0=point blank, 1=max range
+      var dps = (12 + 26 * (1 - rangeFrac));       // 12..38 struct/sec
+      var td = target.userData.cmd;
+      td.struct -= dps * dt;
+      if (td.struct <= 0) { td.struct = 0; knockOut(target); }
+      updateStructBar(target);
+    } else {
+      c.firingTo = null;
+    }
+  }
+
+  function knockOut(g) {
+    var c = g.userData.cmd; if (c.ko) return;
+    c.ko = true; c.firingTo = null;
+    if (c.fireLine) { cmd.fxGroup.remove(c.fireLine); c.fireLine = null; }
+    // grey the unit out
+    g.traverse(function (o) {
+      if (o.isMesh && o.material && o.material.color) {
+        o.material.color.setHex(0x44484a);
+        if (o.material.emissive) o.material.emissive.setHex(0x000000);
+      }
+    });
+    if (g.userData.mkMat) g.userData.mkMat.opacity = 0.4;
+    if (g.userData.labelMat) g.userData.labelMat.opacity = 0.4;
+    // KO tag
+    if (!g.userData.koTag) {
+      var span = Math.max(map.size_m[0], map.size_m[1]);
+      var t = makeTagSprite("KNOCKED OUT", 0x9a3a33, span);
+      t.position.set(0, g.userData.baseMkY + g.userData.mkSize * 0.55, 0);
+      t.material.depthTest = false; t.renderOrder = 26; g.add(t); g.userData.koTag = t;
+    }
+    clearOrders(g);
+    if (cmd.flagship === g) { cmd.flagshipOffNet = true; syncCommandPanel(); }
+    syncCommandPanel();
+  }
+
+  function updateStructBar(g) {
+    if (selected === g) {
+      var bar = document.getElementById("uStruct");
+      if (bar) bar.style.width = Math.round(g.userData.cmd.struct) + "%";
+    }
+  }
+
+  // Animated firing lines (tracer dashes) between firing pairs.
+  function updateFiringFx() {
+    var t = performance.now() * 0.001;
+    units.forEach(function (g) {
+      var c = g.userData.cmd; if (!c) return;
+      if (c.firingTo && !c.ko && !c.firingTo.userData.cmd.ko) {
+        var a = g.userData, b = c.firingTo.userData;
+        var pts = [
+          new THREE.Vector3(a.x, a.eye, a.z),
+          new THREE.Vector3(b.x, b.eye + 10, b.z)
+        ];
+        if (!c.fireLine) {
+          var geo = new THREE.BufferGeometry().setFromPoints(pts);
+          var mat = new THREE.LineDashedMaterial({ color: 0xffcf6a, transparent: true,
+            opacity: 0.95, dashSize: 120, gapSize: 200, depthTest: false });
+          c.fireLine = new THREE.Line(geo, mat); c.fireLine.renderOrder = 28;
+          cmd.fxGroup.add(c.fireLine);
+        }
+        c.fireLine.geometry.setFromPoints(pts);
+        c.fireLine.computeLineDistances();
+        // scroll the dashes to read as tracer fire
+        c.fireLine.material.dashOffset = -(t * 600) % 320;
+        c.fireLine.visible = true;
+      } else if (c.fireLine) {
+        cmd.fxGroup.remove(c.fireLine); c.fireLine = null;
+      }
+    });
+  }
+
+  // ---- BEST POSITION helper ----------------------------------------------------
+  // Find a nearby cell that has LOS to the targeted enemy and good range, drop a flag there.
+  function bestPosition(g, enemy) {
+    if (!g || !enemy) return;
+    var d = g.userData, ed = enemy.userData;
+    var res = map.terrain.res, cell = map.terrain.cell_m, H = map.terrain.heights;
+    var rz = map.size_m[1] / (res - 1);
+    var rangeM = d.rangeM > 0 ? d.rangeM : 12000;
+    var bestX = null, bestZ = null, bestScore = -Infinity;
+    // search a window of grid cells around the FRIENDLY unit (keep it local & cheap)
+    var win = 28;
+    var cx = Math.round(d.x / cell), cz = Math.round(d.z / rz);
+    for (var zi = cz - win; zi <= cz + win; zi += 2) {
+      if (zi < 0 || zi >= res) continue;
+      for (var xi = cx - win; xi <= cx + win; xi += 2) {
+        if (xi < 0 || xi >= res) continue;
+        var wx = xi * cell, wz = zi * rz, wy = H[zi * res + xi];
+        var dist = Math.hypot(ed.x - wx, ed.z - wz);
+        if (dist > rangeM * 0.95 || dist < rangeM * 0.18) continue;   // in range, not on top of it
+        if (!losGrid(wx, wz, wy + d._eyeOff, ed.x, ed.z, ed.eye, res, H, cell, rz)) continue;
+        // score: prefer effective range (~55% of max), higher ground, and flanking offset
+        var rangeScore = -Math.abs(dist - rangeM * 0.55) / rangeM;
+        var elevScore = wy / Math.max(1, map.terrain.max_m) * 0.6;
+        var travel = -Math.hypot(wx - d.x, wz - d.z) / rangeM * 0.25;   // don't walk too far
+        var score = rangeScore + elevScore + travel;
+        if (score > bestScore) { bestScore = score; bestX = wx; bestZ = wz; }
+      }
+    }
+    if (bestX != null) {
+      issueOrder(g, bestX, bestZ, "attack", false);
+      document.getElementById("status").textContent = "BEST FIRING POSITION ORDERED";
+    } else {
+      document.getElementById("status").textContent = "NO CLEAR FIRING POSITION FOUND";
+    }
+  }
+
+  // ---- FORMATIONS (light) ------------------------------------------------------
+  // Move all friendly (non-KO) units to a flag in a LINE perpendicular to travel,
+  // spread around the flagship.
+  function formationMove(x, z, type) {
+    var fr = units.filter(function (g) { return g.userData.side === "friend" && !g.userData.cmd.ko; });
+    if (!fr.length) return;
+    var lead = cmd.flagship && fr.indexOf(cmd.flagship) >= 0 ? cmd.flagship : fr[0];
+    var ld = lead.userData;
+    // travel direction (from lead toward flag); perpendicular = line spread axis
+    var tdx = x - ld.x, tdz = z - ld.z, tl = Math.hypot(tdx, tdz) || 1;
+    var px = -tdz / tl, pz = tdx / tl;          // perpendicular unit
+    var span = Math.max(map.size_m[0], map.size_m[1]) * 0.018;  // spacing between units
+    var n = fr.length, mid = (n - 1) / 2;
+    fr.forEach(function (g, i) {
+      var off = (i - mid) * span;
+      issueOrder(g, x + px * off, z + pz * off, type || cmd.flagType, false);
+    });
+    document.getElementById("status").textContent = "FORMATION MOVE ORDERED (" + n + " UNITS)";
+  }
+
+  // ---- SCENARIOS ---------------------------------------------------------------
+  function relabelUnit(g, name, side, cls, gun, rangeM, x, z, note) {
+    var d = g.userData;
+    d.name = name; d.side = side; d.cls = cls; d.gun = gun; d.rangeM = rangeM;
+    d.note = note;
+    var ny = heightAt(clamp(x,0,map.size_m[0]), clamp(z,0,map.size_m[1]));
+    d.x = x; d.z = z; g.position.set(x, ny, z);
+    d.eye = ny + d._eyeOff;
+    d.cmd.struct = 100; d.cmd.ko = false; d.cmd.speed = classSpeed(cls);
+    // recolour body to the (possibly new) side
+    var col = side === "friend" ? COL.friend : side === "hostile" ? COL.hostile : COL.civ;
+    var mk = side === "friend" ? COL.mkFriend : side === "hostile" ? COL.mkHostile : COL.mkCiv;
+    g.traverse(function (o) {
+      if (o.isMesh && o.material && o.material.color && o.userData._isHull) {
+        o.material.color.setHex(col); if (o.material.emissive) o.material.emissive.setHex(col);
+      }
+    });
+    if (d.markerTexHolder) { /* marker tex set below */ }
+    if (d.mkMat) { d.mkMat.map = makeUnitMarkerTexture(side, mk); d.mkMat.map.needsUpdate = true; d.mkMat.opacity = 1; }
+    if (d.labelMat) d.labelMat.opacity = 1;
+    // relabel name sprite
+    if (d.label && d.label.parent) {
+      d.label.parent.remove(d.label);
+      var span = Math.max(map.size_m[0], map.size_m[1]);
+      var nl = makeLabelSprite(name, span);
+      nl.position.copy(d.label.position); nl.material.depthTest = false; nl.renderOrder = 21;
+      g.add(nl); d.label = nl; d.labelMat = nl.material;
+    }
+    // clear KO visuals
+    if (d.koTag) { g.remove(d.koTag); d.koTag = null; }
+    clearOrders(g);
+  }
+
+  function loadScenario(key) {
+    if (!units.length) return;
+    cmd.scenario = key;
+    var W = map.size_m[0], L = map.size_m[1];
+    // clear flagship marker
+    if (cmd.flagship && cmd.flagship.userData.crown) {
+      cmd.flagship.remove(cmd.flagship.userData.crown); cmd.flagship.userData.crown = null;
+      if (cmd.flagship.userData.flagTag) { cmd.flagship.remove(cmd.flagship.userData.flagTag); cmd.flagship.userData.flagTag = null; }
+    }
+    cmd.flagship = null;
+    // clear objective flags
+    if (cmd.objective && cmd.objective.parent) cmd.flagGroup.remove(cmd.objective);
+    cmd.objective = null;
+    units.forEach(function (g) { clearOrders(g); });
+    var u = units;   // 6 demo units
+    var objName = "—";
+    if (key === "harbour_crossing") {
+      // friendlies south of harbour, objective on far north shore, 2 enemies defending
+      relabelUnit(u[0], "ANZAC-01", "friend", "Line",  "BR-155 (18km)", 18000, W*0.42, L*0.14, "Assault element. Crossing the harbour to seize the north shore.");
+      relabelUnit(u[1], "ANZAC-02", "friend", "Siege", "SG-305 (30km)", 30000, W*0.55, L*0.10, "Siege support. Flagship — directs the crossing.");
+      relabelUnit(u[2], "ANZAC-03", "friend", "Recon", "SR-90 (9km)",    9000, W*0.66, L*0.18, "Amphibious scout. Leads the water crossing.");
+      relabelUnit(u[3], "ANZAC-04", "friend", "Line",  "BR-120 (12km)", 12000, W*0.34, L*0.18, "Flank guard.");
+      relabelUnit(u[4], "DEFENDER-1", "hostile", "Line", "? (defending)", 16000, W*0.46, L*0.86, "Dug in on the north shore objective.");
+      relabelUnit(u[5], "DEFENDER-2", "hostile", "Line", "? (defending)", 14000, W*0.58, L*0.88, "Second defender covering the objective.");
+      placeObjective(W*0.50, L*0.90, "NORTH SHORE — far harbour bank");
+      objName = "SEIZE NORTH SHORE";
+      setFlagship(u[1]);
+    } else if (key === "ridge_defence") {
+      // friendlies on high ground, enemies attacking from low, HOLD flag on crest
+      relabelUnit(u[0], "ANZAC-01", "friend", "Line",  "BR-155 (18km)", 18000, 1084, 8801, "Holding the high crest. Flagship.");
+      relabelUnit(u[1], "ANZAC-02", "friend", "Siege", "SG-305 (30km)", 30000, 1500, 8500, "Siege gun on the ridge — dominates the approaches.");
+      relabelUnit(u[2], "ANZAC-03", "friend", "Recon", "SR-90 (9km)",    9000,  800, 9100, "Spotter on the flank of the ridge.");
+      relabelUnit(u[3], "ANZAC-04", "friend", "Line",  "BR-120 (12km)", 12000, 1300, 9200, "Reserve, just behind the crest.");
+      relabelUnit(u[4], "RAIDER-1", "hostile", "Line", "? (attacking)", 15000, 3200, 7000, "Attacking uphill from the low ground.");
+      relabelUnit(u[5], "RAIDER-2", "hostile", "Line", "? (attacking)", 15000, 2400, 6400, "Second attacker pushing the ridge.");
+      placeObjective(1084, 8801, "HOLD THE CREST");
+      objName = "HOLD THE CREST";
+      setFlagship(u[0]);
+    } else if (key === "convoy_escort") {
+      // a slow convoy must reach an exit flag; raiders intercept
+      relabelUnit(u[0], "CONVOY-LEAD", "friend", "Convoy", "light (4km)", 4000, W*0.12, L*0.30, "Slow convoy. Must reach the EXIT. Flagship.");
+      relabelUnit(u[1], "ESCORT-1", "friend", "Line",  "BR-120 (12km)", 12000, W*0.16, L*0.36, "Close escort.");
+      relabelUnit(u[2], "ESCORT-2", "friend", "Recon", "SR-90 (9km)",    9000, W*0.10, L*0.24, "Outrider — screens ahead.");
+      relabelUnit(u[3], "ESCORT-3", "friend", "Line",  "BR-155 (18km)", 18000, W*0.18, L*0.30, "Rear guard.");
+      relabelUnit(u[4], "RAIDER-1", "hostile", "Recon", "? (raider)", 9000, W*0.55, L*0.55, "Fast raider trying to intercept the convoy.");
+      relabelUnit(u[5], "RAIDER-2", "hostile", "Line",  "? (raider)", 12000, W*0.72, L*0.40, "Second raider closing on the route.");
+      placeObjective(W*0.88, L*0.62, "CONVOY EXIT");
+      objName = "GET CONVOY TO EXIT";
+      setFlagship(u[0]);
+    }
+    selected = units[0]; selectUnit(selected);
+    var sd = document.getElementById("scenSel"); if (sd) sd.value = key;
+    var cs = document.getElementById("cScen");
+    if (cs) cs.textContent = key ? key.replace(/_/g, " ").toUpperCase() : "FREE DEPLOY";
+    var co = document.getElementById("cObj"); if (co) co.textContent = objName;
+    cmd._objName = objName;
+    frameCamera();
+    rebuildOverlays();
+    syncCommandPanel();
+  }
+
+  function placeObjective(x, z, label) {
+    if (cmd.objective && cmd.objective.parent) cmd.flagGroup.remove(cmd.objective);
+    var f = makeFlag(x, z, "move", true);
+    // make objective bigger
+    f.scale.set(1.6, 1.6, 1.6);
+    var span = Math.max(map.size_m[0], map.size_m[1]);
+    var tag = makeTagSprite(label || "OBJECTIVE", FLAG_COL.objective, span);
+    tag.position.set(0, span * 0.028, 0); tag.material.depthTest = false; tag.renderOrder = 25;
+    f.add(tag);
+    cmd.flagGroup.add(f);
+    cmd.objective = f;
+  }
+
+  // ---- DEMO ORDERS (headless screenshots): auto-issue so movement/combat is visible ----
+  function autoIssueDemoOrders() {
+    if (cmd.objective) {
+      var o = cmd.objective.userData;
+      // order each friendly to ATTACK toward the objective so firing lines + movement render
+      units.forEach(function (g) {
+        if (g.userData.side === "friend" && !g.userData.cmd.ko) {
+          var jx = (Math.random() - 0.5) * 600, jz = (Math.random() - 0.5) * 600;
+          issueOrder(g, o.fx + jx, o.fz + jz, "attack", false);
+        }
+      });
+    }
+    // nudge everyone forward a bit so the screenshot shows motion + tracers immediately
+    units.forEach(function (g) { g.userData._engageAll = true; });
+    for (var i = 0; i < 90; i++) stepCommandSim(0.1);
+  }
+
+  function checkFlagshipNet() {
+    if (!cmd.flagship || !cmd.on) { cmd.flagshipOffNet = false; return; }
+    var off = cmd.flagship.userData.cmd.ko;
+    if (off !== cmd.flagshipOffNet) { cmd.flagshipOffNet = off; syncCommandPanel(); }
+  }
+
+  function syncCommandPanel() {
+    var fn = document.getElementById("cFlag");
+    if (fn) { fn.textContent = cmd.flagship ? cmd.flagship.userData.name : "—"; }
+    var wr = document.getElementById("cFlagWarnRow");
+    if (wr) wr.style.display = (cmd.flagship && cmd.flagshipOffNet) ? "block" : "none";
+    var sn = document.getElementById("cSelName");
+    if (sn) sn.textContent = selected ? selected.userData.name : "— none —";
+    var cn = document.getElementById("cNet");
+    if (cn) cn.textContent = cmd.netStat || (show.comms ? "—" : "enable COMMS NET");
+    var co = document.getElementById("cObj");
+    if (co && cmd._objName) co.textContent = cmd._objName;
+    // flag-type button highlight
+    ["Move","Hold","Attack"].forEach(function (t) {
+      var b = document.getElementById("ft" + t);
+      if (b) b.classList.toggle("on", cmd.flagType === t.toLowerCase());
+    });
+  }
+
   // ---------- util ----------
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
   function mix(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
@@ -1919,6 +2594,10 @@
     var dt = fly.clock ? fly.clock.getDelta() : 0.016;
     if (fly.on) updateFly(Math.min(dt, 0.1));
     else controls.update();
+
+    // COMMAND MODE: advance movement + combat when playing
+    if (cmd.on && cmd.playing) stepCommandSim(dt);
+    else if (cmd.on) updateFiringFx();   // keep tracers tidy when paused
 
     // pulse the selected unit's halo
     if (selected && selected.userData.haloMat) {

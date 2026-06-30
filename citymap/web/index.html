@@ -46,6 +46,24 @@
     font-size:11px;letter-spacing:.10em;color:var(--ink);text-transform:uppercase;text-align:center;line-height:1.7}
   #flyHint .k{color:var(--teal)} #flyHint .a{color:var(--amber);font-weight:bold;letter-spacing:.18em}
   #load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:30;color:var(--amber);letter-spacing:.3em}
+  /* ===== COMMAND MODE ===== */
+  #cmd{top:42px;left:235px;width:236px;display:none}
+  #cmd .row{font-size:11px;line-height:1.65}
+  #cmd .big{color:var(--orange);font-weight:bold;letter-spacing:.14em;font-size:12px}
+  #cmd .ship{color:var(--amber);font-weight:bold}
+  #cmd select{margin-top:0}
+  .cmdrow{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
+  .cmdrow .btn{flex:1;padding:6px 4px;font-size:10px;min-width:46px}
+  .ftbtn{flex:1;padding:6px 3px;font-size:10px}
+  .ftbtn.move{border-color:#5fd6c6;color:#5fd6c6}
+  .ftbtn.hold{border-color:#e8a838;color:#e8a838}
+  .ftbtn.attack{border-color:#d75a52;color:#d75a52}
+  .ftbtn.on{background:rgba(80,90,85,.4);color:var(--ink)}
+  #playBtn.playing{border-color:#7fdf8c;color:#7fdf8c}
+  .obj{color:#7fe6a0}
+  #cmdHint{position:fixed;bottom:88px;left:10px;width:300px;font-size:9.5px;color:var(--dim);
+    line-height:1.7;letter-spacing:.02em;background:var(--panel);border:1px solid var(--hair);padding:7px 9px;display:none}
+  #cmdHint .a{color:var(--amber)} #cmdHint .m{color:#5fd6c6} #cmdHint .at{color:#d75a52}
 </style>
 </head>
 <body>
@@ -69,6 +87,16 @@
   <div class="row warn" style="margin-top:6px">CONDITIONS: INHOSPITABLE</div>
   <div class="row dim">DOWNED CREW MUST BE RECOVERED</div>
   <select id="citySel"></select>
+  <div class="hdr" style="margin-top:9px">Command Mode</div>
+  <div class="tg">
+    <button class="btn" id="tCmd">COMMAND MODE</button>
+  </div>
+  <select id="scenSel" style="display:none">
+    <option value="">— free deploy —</option>
+    <option value="harbour_crossing">Harbour Crossing</option>
+    <option value="ridge_defence">Ridge Defence</option>
+    <option value="convoy_escort">Convoy Escort</option>
+  </select>
 </div>
 
 <div class="panel" id="legend">
@@ -163,6 +191,38 @@
   <div class="row dim" id="fAofNote" style="margin-top:3px">select / target an enemy crab</div>
 </div>
 
+<div class="panel" id="cmd">
+  <div class="hdr">Command &amp; Control</div>
+  <div class="row"><span class="dim">SCENARIO</span> <span id="cScen" class="big">FREE DEPLOY</span></div>
+  <div class="row"><span class="dim">FLAGSHIP&nbsp;</span> <span id="cFlag" class="ship">—</span></div>
+  <div class="row"><span class="dim">NET&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <span id="cNet" class="k">—</span></div>
+  <div class="row" id="cFlagWarnRow" style="display:none"><span class="warn" id="cFlagWarn">FLAGSHIP OUT OF CONTACT</span></div>
+  <div class="row"><span class="dim">OBJECTIVE</span> <span id="cObj" class="obj">—</span></div>
+  <div class="row"><span class="dim">SIM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <span id="cSim" class="warn">PAUSED</span></div>
+  <div class="cmdrow">
+    <button class="btn" id="playBtn" style="flex:1">&#9654; PLAY</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Order Type</div>
+  <div class="cmdrow" id="ftRow">
+    <button class="btn ftbtn move on" id="ftMove">MOVE</button>
+    <button class="btn ftbtn hold" id="ftHold">HOLD</button>
+    <button class="btn ftbtn attack" id="ftAttack">ATTACK</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Selected Unit</div>
+  <div class="row"><span class="dim">UNIT</span> <span id="cSelName" class="k">— none —</span></div>
+  <div class="cmdrow">
+    <button class="btn" id="cFlagshipBtn">SET FLAGSHIP</button>
+    <button class="btn" id="cBestBtn">BEST POSITION</button>
+  </div>
+  <div class="cmdrow">
+    <button class="btn" id="cClearBtn">CLEAR ORDERS</button>
+    <button class="btn" id="cAllBtn">SELECT ALL</button>
+  </div>
+  <div class="row dim" style="margin-top:6px;font-size:9px;line-height:1.5">
+    L-CLICK select &middot; R-CLICK = drop flag/move &middot; SHIFT+R = waypoint
+  </div>
+</div>
+
 <div class="panel" id="wx">
   <div class="hdr">Conditions</div>
   <div id="wxBody"><div class="row dim">NO WEATHER DATA</div></div>
@@ -190,6 +250,11 @@
   <button class="btn" id="rst">RESET</button>
 </div>
 <div class="hint">DRAG orbit &middot; WHEEL zoom &middot; CLICK a crab to inspect &middot; <span style="color:var(--amber)">F</span> = fly cam<br><span style="color:var(--amber)">, / .</span> cycle units &middot; <span style="color:var(--amber)">DEAD ZONES</span> = selected crab's fire picture<br>map review viewer &mdash; shared data with the Unity game</div>
+
+<div id="cmdHint">
+  <span class="a">COMMAND</span> &middot; L-CLICK select unit &middot; <span class="m">R-CLICK</span> drop flag &amp; move &middot; <span class="m">SHIFT+R</span> waypoint chain<br>
+  <span class="m">1</span>=MOVE <span class="a">2</span>=HOLD <span class="at">3</span>=ATTACK &middot; SET FLAGSHIP &middot; BEST POSITION &middot; SPACE = play/pause &middot; R-CLICK a flag to clear it
+</div>
 
 <div id="flyHint">
   <span class="a">FLY CAM ACTIVE</span> &nbsp;&middot;&nbsp;
