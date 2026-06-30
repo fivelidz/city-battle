@@ -39,33 +39,49 @@
     <a class="card" href="index.html">
       <h2>Tactical Map</h2>
       <p>Real Sydney terrain (accurate Copernicus DEM): topographic relief, contours, harbour water,
-         18k buildings. Viewshed line-of-sight light-cast, gun-range rings, live weather &amp; wind field.</p>
-      <span class="tag">SYDNEY &middot; 11&times;12 KM &middot; LIVE WEATHER</span>
+         18k buildings. Fog-of-war LOS, gun-range rings, fire-analysis dead space, slope/trafficability,
+         live weather &amp; wind, WASD fly-cam, suburb overlay.</p>
+      <span class="tag">SYDNEY &middot; LIVE WEATHER &middot; FIRE + SLOPE OVERLAYS</span>
     </a>
     <a class="card" href="designer/index.html">
       <h2>Crab Foundry</h2>
-      <p>Rule-the-Waves-style mecha designer respecced for crabs. Pick a chassis, allocate per-zone
-         armour, fit guns &amp; modules on a weight/cost budget &mdash; with a live 3D model.</p>
-      <span class="tag">DESIGNER &middot; LIVE 3D &middot; REAL GAME DATA</span>
+      <p>Rule-the-Waves-style designer. Pick a chassis, allocate per-zone armour, place guns at
+         A/B/X/Y/wing stations with <b>cones of fire</b>, fit modules, see the <b>immunity zone</b> &amp;
+         derived class &mdash; with a live 3D model.</p>
+      <span class="tag">DESIGNER &middot; CONES OF FIRE &middot; IMMUNITY ZONE</span>
+    </a>
+    <a class="card" href="tech/index.html">
+      <h2>Research / Tech</h2>
+      <p>The RtW stochastic, year-gated tech tree. Fund branches, watch breakthroughs unlock chassis,
+         guns, armour, drones &amp; EW across the 2025&ndash;2070 eras &mdash; feeding the Foundry.</p>
+      <span class="tag">10 BRANCHES &middot; 81 TECHS &middot; STOCHASTIC</span>
+    </a>
+    <a class="card" href="command/index.html">
+      <h2>High Command</h2>
+      <p>The RtW3 strategic layer: <b>prestige/popularity</b> (stay in power), <b>victory points</b>
+         (win wars), tension between alt-history nations, budget, production &rarr; roster, events &amp;
+         missions.</p>
+      <span class="tag">VP &middot; PRESTIGE &middot; TENSION &middot; BUDGET</span>
+    </a>
+    <a class="card" href="tutorial/index.html">
+      <h2>Artillery Tutorial</h2>
+      <p>Learn the core: direct/indirect/mortar fire, dead space, defilade, angle-of-fall (deck vs
+         side), immunity zones &amp; dispersion &mdash; illustrated cards from real artillery doctrine.</p>
+      <span class="tag">13 CARDS &middot; LEARN THE GUNS</span>
     </a>
     <a class="card" href="designer/gallery.html">
       <h2>Chassis Gallery</h2>
       <p>All six crab chassis classes side by side: Recon, Skirmisher, Line, Spider, Siege, Carrier.
-         Narrow ship-like hulls on insectoid legs, scaled by tonnage.</p>
+         Narrow ship-like hulls on insectoid legs (bow/stern), scaled by tonnage.</p>
       <span class="tag">6 CLASSES &middot; 28t &rarr; 360t</span>
-    </a>
-    <a class="card" href="index.html?mode=elevation">
-      <h2>Elevation View</h2>
-      <p>The tactical map in coloured-elevation (hypsometric) mode &mdash; reads the real Sydney
-         topography and harbour channels at a glance. Useful for 3D-print prep too.</p>
-      <span class="tag">HYPSOMETRIC &middot; 3D-PRINT READY</span>
     </a>
   </div>
 
   <div class="ftr">
     DATA: Copernicus DEM GLO-30 (terrain) &middot; OpenStreetMap (buildings, ODbL) &middot;
     Open-Meteo (weather). &nbsp; All map data is exported as the canonical
-    <code>citymap/data/&lt;city&gt;.citymap.json</code> shared by web + Unity.
+    <code>citymap/data/&lt;city&gt;.citymap.json</code> shared by web + Unity. &nbsp;
+    Game wiki: <code>docs/wiki/</code>.
   </div>
 </div>
 </body>

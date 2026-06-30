@@ -41,11 +41,11 @@
   // splay  : how far legs kick out sideways
   var CLASS_PROFILE = {
     Recon:      { beam: 0.22, height: 0.11, legs: 6,  legLen: 1.05, mast: 1.9, turrets: 1, segs: 3, tier: 1, deck: 0, splay: 1.05, pods: 1 },
-    Skirmisher: { beam: 0.24, height: 0.13, legs: 6,  legLen: 0.95, mast: 1.35, turrets: 2, segs: 3, tier: 1, deck: 0, splay: 1.0,  pods: 1 },
-    Line:       { beam: 0.27, height: 0.15, legs: 8,  legLen: 0.85, mast: 1.1,  turrets: 4, segs: 4, tier: 2, deck: 0, splay: 0.95, pods: 2 },
+    Skirmisher: { beam: 0.23, height: 0.13, legs: 6,  legLen: 0.95, mast: 1.35, turrets: 2, segs: 3, tier: 1, deck: 0, splay: 1.0,  pods: 1 },
+    Line:       { beam: 0.25, height: 0.15, legs: 8,  legLen: 0.85, mast: 1.1,  turrets: 4, segs: 5, tier: 2, deck: 0, splay: 0.95, pods: 2 },
     Spider:     { beam: 0.40, height: 0.12, legs: 12, legLen: 1.15, mast: 0.7,  turrets: 4, segs: 4, tier: 1, deck: 0, splay: 1.35, pods: 2 },
-    Siege:      { beam: 0.32, height: 0.22, legs: 8,  legLen: 0.72, mast: 0.95, turrets: 3, segs: 5, tier: 4, deck: 0, splay: 0.9,  pods: 3 },
-    Carrier:    { beam: 0.36, height: 0.16, legs: 10, legLen: 0.82, mast: 1.5,  turrets: 1, segs: 4, tier: 1, deck: 1, splay: 1.05, pods: 4 },
+    Siege:      { beam: 0.26, height: 0.20, legs: 8,  legLen: 0.72, mast: 0.95, turrets: 4, segs: 7, tier: 4, deck: 0, splay: 0.9,  pods: 3 },
+    Carrier:    { beam: 0.34, height: 0.16, legs: 10, legLen: 0.82, mast: 1.5,  turrets: 1, segs: 4, tier: 1, deck: 1, splay: 1.05, pods: 4 },
   };
 
   var COL = { friend: 0x3e7a74, hostile: 0x9a3a33, civ: 0x7a6a3a, neutral: 0x5a6258 };
@@ -150,6 +150,17 @@
     var cls = spec.chassisClass || "Line";
     var P = CLASS_PROFILE[cls] || CLASS_PROFILE.Line;
     var L = spec.lengthM || 28;
+    // Scale hull length up a touch with the number of mounts so guns never crowd:
+    // each centreline main station needs ~0.16*L of hull; a hull carrying many
+    // mains/secondaries is stretched so the barrels stay clear. Counts centreline
+    // mains (non-wing) most heavily since they march down the length.
+    var mountList = spec.mounts && spec.mounts.length ? spec.mounts : null;
+    if (mountList) {
+      var nCentre = 0, nWing = 0;
+      mountList.forEach(function (m) { if (m.wing) nWing++; else nCentre++; });
+      var needCentre = Math.max(P.turrets, nCentre);
+      L *= (1 + Math.max(0, needCentre - 2) * 0.07 + nWing * 0.015);
+    }
     var beam = L * (spec.beamFrac || P.beam);
     var ht = L * P.height;
     var teamCol = COL[spec.team || "neutral"];
@@ -256,10 +267,12 @@
       mounts.forEach(function (m) {
         var x = (m.xf || 0) * beam;
         var z = (m.zf || 0) * L;
-        var riser = (m.tier || 0) * ht * 0.5;
+        // each superfiring tier raises the gun AND (because zf is already set back
+        // toward midships in POSDEFS) it clears the roof of the turret in front.
+        var riser = (m.tier || 0) * ht * 0.62;
         var y, yaw;
         if (m.wing) {
-          y = deckY - ht * 0.16;
+          y = deckY - ht * 0.14;
           yaw = (m.xf >= 0) ? Math.PI / 2 : -Math.PI / 2;   // starboard / port outboard
         } else {
           y = deckY + riser;
@@ -275,13 +288,16 @@
       var maxMain = Math.min(P.turrets, ordered.length);
       var foreN = Math.ceil(maxMain / 2);
       var aftN = maxMain - foreN;
+      // station k=0 sits at the END (bow/stern) low; each higher k steps toward
+      // midships AND up one tier (superfiring), spaced ~0.16*L apart so the long
+      // barrels of the outer gun clear the turret behind/ahead of it.
       function foreSlot(k, n) {
-        if (n === 1) return { z: 0.30 * L, riser: 0 };
-        return { z: (0.34 - k * 0.16) * L, riser: (n - 1 - k) * ht * 0.5 };
+        if (n === 1) return { z: 0.32 * L, riser: 0 };
+        return { z: (0.40 - k * 0.16) * L, riser: k * ht * 0.62 };
       }
       function aftSlot(k, n) {
-        if (n === 1) return { z: -0.32 * L, riser: 0 };
-        return { z: (-0.30 - k * 0.16) * L, riser: (n - 1 - k) * ht * 0.5 };
+        if (n === 1) return { z: -0.34 * L, riser: 0 };
+        return { z: (-0.40 + k * 0.16) * L, riser: k * ht * 0.62 };
       }
       var oi = 0;
       for (var fk = 0; fk < foreN; fk++) {
@@ -292,11 +308,13 @@
         var sA = aftSlot(ak, aftN);
         buildTurret(ordered[oi++].m.caliberMm, 0, deckY + sA.riser, sA.z, Math.PI);
       }
+      // secondaries: clearly outboard on the midships flanks, fanned fore/aft so
+      // multiple per side don't stack, each facing its own broadside.
       var secSide = 1, secRow = 0;
       while (oi < ordered.length) {
-        var sx = secSide * beam * 0.46;
-        var sz = (-0.04 - secRow * 0.14) * L;
-        buildTurret(ordered[oi++].m.caliberMm, sx, deckY - ht * 0.18, sz,
+        var sx = secSide * beam * 0.50;
+        var sz = (0.08 - secRow * 0.18) * L;
+        buildTurret(ordered[oi++].m.caliberMm, sx, deckY - ht * 0.14, sz,
                     secSide > 0 ? Math.PI / 2 : -Math.PI / 2, true);
         if (secSide > 0) { secSide = -1; } else { secSide = 1; secRow++; }
       }
@@ -308,18 +326,21 @@
       cal = cal || 105;
       var calN = Math.min(cal, 305) / 305;
       var scl = isSec ? 0.62 : 1.0;                       // secondaries are smaller mounts
-      var tSize = beam * (0.34 + calN * 0.34) * scl;
+      var tSize = beam * (0.34 + calN * 0.30) * scl;
       var tg = new T.Group(); tg.position.set(x, y, z); tg.rotation.y = yaw; g.add(tg);
       // barbette base
       var bar = new T.Mesh(new T.CylinderGeometry(tSize * 0.42, tSize * 0.48, ht * 0.24, 8), plateMat);
       bar.position.y = ht * 0.12; tg.add(bar);
       // faceted turret box (chamfered, low)
       var tTopY = ht * (0.4 + calN * 0.15);
-      var turret = new T.Mesh(new T.BoxGeometry(tSize, ht * (0.4 + calN * 0.3) * scl, tSize * 1.25), hullMat);
+      var turret = new T.Mesh(new T.BoxGeometry(tSize, ht * (0.4 + calN * 0.3) * scl, tSize * 1.2), hullMat);
       turret.position.y = tTopY; tg.add(turret);
-      // barrel(s): length & thickness scale with calibre; twin barrels for big guns
-      var barLen = L * (0.16 + calN * 0.5) * (isSec ? 0.7 : 1);
-      var barR = beam * (0.022 + calN * 0.06) * scl;
+      // barrel(s): length & thickness scale with calibre. A real naval barrel is
+      // ~45 calibres; scaled to hull length the heaviest mains reach ~0.30*L (long
+      // but they must NOT poke through neighbouring turrets, so we offset stations
+      // wide enough in the layout below). Secondaries are stubbier.
+      var barLen = L * (0.13 + calN * 0.18) * (isSec ? 0.66 : 1);
+      var barR = beam * (0.020 + calN * 0.05) * scl;
       var twin = calN > 0.55 && !isSec;
       var barYs = twin ? [-barR * 1.4, barR * 1.4] : [0];
       for (var bk = 0; bk < barYs.length; bk++) {

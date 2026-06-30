@@ -8,6 +8,7 @@ using CityBattle.Terrain;
 using CityBattle.Units;
 using CityBattle.Combat;
 using CityBattle.Campaign;
+using CityBattle.Design;
 
 namespace CityBattle.Tests
 {
@@ -208,6 +209,41 @@ namespace CityBattle.Tests
             cs.NewCampaign(_db, _tree, 1);
             cs.AddPrestige(-100f);
             Assert.IsTrue(cs.RemovedFromCommand, "Prestige hitting 0 removes you from command.");
+        }
+
+        // ---- Design class derivation ----
+        [Test]
+        public void Design_DerivesRtWClassCodes()
+        {
+            var siege = _db.Chassis.Find(c => c.cls == ChassisClass.Siege);
+            var line = _db.Chassis.Find(c => c.cls == ChassisClass.Line);
+            var recon = _db.Chassis.Find(c => c.cls == ChassisClass.Recon);
+            var carrier = _db.Chassis.Find(c => c.cls == ChassisClass.Carrier);
+            var bigGun = _db.Guns.Find(g => g.caliberMm >= 300);   // 305
+            var medGun = _db.Guns.Find(g => g.name.Contains("155"));
+            var drone = _db.Drones.Find(d => d.role == DroneRole.Recon);
+
+            // Siege + 305mm + thick belt => BB.
+            var bb = new MechaDesign { chassisId = siege.id, armorMaterialId = _db.Armors[0].id, glacisMm = 300 };
+            bb.weaponGunIds.Add(bigGun.id);
+            Assert.AreEqual("BB", bb.DerivedClassCode(_db), "Big-gun thick-belt siege should read BB.");
+
+            // Line + 155mm => CL/CA range.
+            var cl = new MechaDesign { chassisId = line.id, armorMaterialId = _db.Armors[0].id, glacisMm = 150 };
+            cl.weaponGunIds.Add(medGun.id);
+            var code = cl.DerivedClassCode(_db);
+            Assert.IsTrue(code == "CL" || code == "CA", "Line with 155mm should read CL or CA, got " + code);
+
+            // Recon chassis => Recon.
+            var rc = new MechaDesign { chassisId = recon.id, armorMaterialId = _db.Armors[0].id };
+            Assert.AreEqual("Recon", rc.DerivedClassCode(_db));
+
+            // Carrier with drones => CV.
+            var cv = new MechaDesign { chassisId = carrier.id, armorMaterialId = _db.Armors[0].id };
+            cv.droneIds.Add(drone.id); cv.droneIds.Add(drone.id);
+            Assert.AreEqual("CV", cv.DerivedClassCode(_db));
+
+            Assert.AreEqual("battle-crab", MechaDesign.ClassName("BB"));
         }
 
         [Test]

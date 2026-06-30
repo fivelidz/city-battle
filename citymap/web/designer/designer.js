@@ -118,13 +118,18 @@
   //  X = aft  centreline superfiring   Y = aft centreline low
   //  P = port wing (midships)   S = starboard wing (midships)
   // Arc = [centre, halfWidth] in degrees (0=ahead, +90=stbd beam, 180=astern, -90=port).
+  // Stations are spread along the hull so even the biggest mains (305mm, long
+  // barrels) don't intersect. A/Y sit low at the bow/stern ends pointing out;
+  // B/X are superfiring (raised one tier AND set ~0.16*L back toward midships)
+  // so their barrels clear the roof of the turret in front. Wings sit clearly
+  // outboard at midships, firing to their side.
   var POSDEFS = {
-    A: { label: "A (fore low)",       grp: "fore", zf: 0.34,  xf: 0,    tier: 0, arc: [0, 150],   wing: false },
-    B: { label: "B (fore superfire)", grp: "fore", zf: 0.20,  xf: 0,    tier: 1, arc: [0, 160],   wing: false },
-    X: { label: "X (aft superfire)",  grp: "aft",  zf: -0.20, xf: 0,    tier: 1, arc: [180, 160], wing: false },
-    Y: { label: "Y (aft low)",        grp: "aft",  zf: -0.34, xf: 0,    tier: 0, arc: [180, 150], wing: false },
-    P: { label: "P (port wing)",      grp: "wing", zf: -0.02, xf: -0.42, tier: 0, arc: [-90, 70],  wing: true },
-    S: { label: "S (stbd wing)",      grp: "wing", zf: -0.02, xf: 0.42,  tier: 0, arc: [90, 70],   wing: true },
+    A: { label: "A (fore low)",       grp: "fore", zf: 0.40,  xf: 0,    tier: 0, arc: [0, 150],   wing: false },
+    B: { label: "B (fore superfire)", grp: "fore", zf: 0.24,  xf: 0,    tier: 1, arc: [0, 160],   wing: false },
+    X: { label: "X (aft superfire)",  grp: "aft",  zf: -0.24, xf: 0,    tier: 1, arc: [180, 160], wing: false },
+    Y: { label: "Y (aft low)",        grp: "aft",  zf: -0.40, xf: 0,    tier: 0, arc: [180, 150], wing: false },
+    P: { label: "P (port wing)",      grp: "wing", zf: 0.0,  xf: -0.46, tier: 0, arc: [-90, 70],  wing: true },
+    S: { label: "S (stbd wing)",      grp: "wing", zf: 0.0,  xf: 0.46,  tier: 0, arc: [90, 70],   wing: true },
   };
   // Which positions a chassis exposes, by weapon-mount count (centreline first - the
   // RtW preference, since centreline guns help both broadsides). Wings come after.
@@ -327,7 +332,9 @@
   function rebuildModel() {
     if (crab) { scene.remove(crab.group); }
     var c = chassis();
-    var lenByClass = { Recon: 16, Skirmisher: 22, Line: 28, Spider: 34, Siege: 44, Carrier: 38 };
+    // base hull length per class; build() stretches it further with mount count
+    // so the gun stations never crowd (Siege fully loaded → ~52m).
+    var lenByClass = { Recon: 16, Skirmisher: 22, Line: 28, Spider: 32, Siege: 46, Carrier: 38 };
     // pass POSITIONED mounts so the model places turrets at A/B/X/Y/P/S
     var mounts = fittedGuns().map(function (t) {
       var d = POSDEFS[t.pos];
@@ -340,9 +347,9 @@
     };
     crab = window.CrabModel.build(spec);
     scene.add(crab.group);
-    var L = spec.lengthM;
-    controls.target.set(0, L * 0.25, 0);
-    cam.position.set(L * 1.1, L * 0.8, L * 1.5);
+    var L = crab.lengthM;   // actual (mount-stretched) length, for correct framing
+    controls.target.set(0, L * 0.22, 0);
+    cam.position.set(L * 1.15, L * 0.85, L * 1.6);
     controls.update();
   }
   function onResize() { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); }

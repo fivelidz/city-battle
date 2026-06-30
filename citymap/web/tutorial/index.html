@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CITY BATTLE // ARTILLERY ACADEMY</title>
+<style>
+  :root{
+    --bg:#0b0d0c; --panel:rgba(13,17,16,.86); --hair:rgba(120,140,130,.16);
+    --ink:#9eb0a5; --dim:#5d6d64; --amber:#b0822c; --orange:#9e5420;
+    --red:#9a3a33; --teal:#3e7a74; --good:#6f9e6a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;min-height:100%;background:var(--bg);
+    font-family:"DejaVu Sans Mono",ui-monospace,Consolas,monospace;color:var(--ink);font-size:12px}
+  body{overflow-y:auto}
+  /* ---------------- top nav ---------------- */
+  #top{position:sticky;top:0;left:0;right:0;height:30px;display:flex;align-items:center;gap:16px;
+    padding:0 14px;background:var(--panel);border-bottom:1px solid var(--hair);z-index:20}
+  #top .t{color:var(--orange);font-weight:bold;letter-spacing:.3em;font-size:13px}
+  #top .dim{color:var(--dim)}
+  #top .nav{display:flex;align-items:center;flex-wrap:wrap}
+  #top .nav a{color:var(--dim);text-decoration:none;letter-spacing:.1em;margin-left:14px}
+  #top .nav a:hover{color:var(--amber)}
+  #top .r{margin-left:auto;color:var(--dim);letter-spacing:.1em}
+  #top .r b{color:var(--amber)}
+  /* ---------------- layout ---------------- */
+  #wrap{max-width:1180px;margin:0 auto;padding:14px 14px 60px}
+  .intro{border:1px solid var(--hair);background:var(--panel);padding:12px 16px;margin-bottom:14px}
+  .intro .h{color:var(--amber);font-size:13px;letter-spacing:.22em;font-weight:bold;text-transform:uppercase;margin-bottom:6px}
+  .intro p{color:var(--dim);font-size:11px;line-height:1.7}
+  .intro b{color:var(--ink)}
+  /* progress dots */
+  #dots{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 14px;align-items:center}
+  #dots .d{width:24px;height:20px;border:1px solid var(--hair);background:rgba(20,26,23,.4);
+    color:var(--dim);font-size:9.5px;text-align:center;line-height:18px;cursor:pointer;letter-spacing:.02em}
+  #dots .d:hover{border-color:var(--teal);color:var(--ink)}
+  #dots .d.on{border-color:var(--amber);background:rgba(120,86,30,.22);color:var(--amber);font-weight:bold}
+  #dots .d.key{border-color:var(--red)}
+  #dots .d.on.key{background:rgba(154,58,51,.25);color:var(--red);border-color:var(--red)}
+  #dots .sep{color:var(--dim);font-size:9.5px;letter-spacing:.1em;margin:0 4px}
+  /* card */
+  .card{border:1px solid var(--hair);background:var(--panel);display:none}
+  .card.on{display:block}
+  .card .chead{display:flex;align-items:baseline;gap:12px;padding:10px 16px 8px;border-bottom:1px solid var(--hair)}
+  .card .num{flex:0 0 auto;width:34px;height:34px;border:1px solid var(--amber);color:var(--amber);
+    font-weight:bold;font-size:15px;text-align:center;line-height:32px;letter-spacing:.02em}
+  .card.keycard .num{border-color:var(--red);color:var(--red)}
+  .card .ttl{flex:1}
+  .card .ttl .k{color:var(--ink);font-size:15px;letter-spacing:.14em;font-weight:bold;text-transform:uppercase}
+  .card.keycard .ttl .k{color:var(--red)}
+  .card .ttl .tag{color:var(--teal);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase}
+  .card .cbody{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  @media(max-width:820px){.card .cbody{grid-template-columns:1fr}}
+  .card .txt{padding:14px 18px;border-right:1px solid var(--hair)}
+  @media(max-width:820px){.card .txt{border-right:none;border-bottom:1px solid var(--hair)}}
+  .card .txt .lead{color:var(--ink);font-size:13px;line-height:1.7;margin-bottom:12px}
+  .card .txt .lead b{color:var(--amber)}
+  .card .txt ul{list-style:none;margin:4px 0}
+  .card .txt li{color:var(--dim);font-size:11px;line-height:1.7;padding-left:14px;position:relative;margin-bottom:5px}
+  .card .txt li:before{content:"\203A";position:absolute;left:0;color:var(--teal)}
+  .card .txt li b{color:var(--ink)}
+  .card .txt li .hot{color:var(--red)}
+  .card .txt li .grn{color:var(--good)}
+  .card .txt .note{margin-top:12px;padding:8px 10px;border:1px solid var(--hair);
+    border-left:3px solid var(--teal);background:rgba(62,122,116,.07);font-size:10.5px;line-height:1.6;color:var(--dim)}
+  .card .txt .note b{color:var(--teal)}
+  .card .txt .note.game{border-left-color:var(--amber);background:rgba(120,86,30,.08)}
+  .card .txt .note.game b{color:var(--amber)}
+  .card .diag{padding:14px;display:flex;align-items:center;justify-content:center;min-height:300px;background:rgba(8,11,10,.45)}
+  .card .diag svg{width:100%;height:auto;max-height:340px;display:block}
+  /* svg helper text classes */
+  svg text{font-family:"DejaVu Sans Mono",ui-monospace,monospace}
+  /* nav buttons */
+  #pager{display:flex;align-items:center;gap:12px;margin-top:16px;justify-content:center}
+  .pbtn{padding:9px 22px;background:rgba(120,86,30,.18);border:1px solid var(--amber);color:var(--amber);
+    font-family:inherit;font-weight:bold;letter-spacing:.14em;font-size:12px;cursor:pointer}
+  .pbtn:hover{background:rgba(120,86,30,.38);color:var(--ink)}
+  .pbtn:disabled{opacity:.3;cursor:not-allowed}
+  .pbtn.ghost{background:rgba(62,122,116,.12);border-color:var(--teal);color:var(--teal)}
+  .pbtn.ghost:hover{background:rgba(62,122,116,.3);color:var(--ink)}
+  #pgnum{color:var(--dim);letter-spacing:.16em;font-size:11px;min-width:84px;text-align:center}
+  #pgnum b{color:var(--amber)}
+  #scan{position:fixed;inset:0;pointer-events:none;z-index:30;opacity:.04;
+    background:repeating-linear-gradient(0deg,transparent 0 2px,#000 3px)}
+  ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:rgba(120,140,130,.25)}
+</style>
+</head>
+<body>
+<div id="scan"></div>
+<div id="top">
+  <span class="t">CITY BATTLE</span><span class="dim">// ARTILLERY ACADEMY &mdash; GUNNERY PRIMER</span>
+  <span class="nav">
+    <a href="../index.html">&larr; TACTICAL MAP</a>
+    <a href="../designer/index.html">CRAB FOUNDRY</a>
+    <a href="../tech/index.html">RESEARCH</a>
+    <a href="../command/index.html">HIGH COMMAND</a>
+    <a href="../hub.html">HUB</a>
+  </span>
+  <span class="r">FIELD MANUAL <b>FM-01</b></span>
+</div>
+
+<div id="wrap">
+  <div class="intro">
+    <div class="h">Gunnery Primer &mdash; how shells, terrain &amp; armour interact</div>
+    <p>CITY BATTLE replaces the open sea with <b>real topography</b>. One rule unifies all of it:
+      <b>the angle a shell falls at decides which armour face it strikes</b> &mdash; flat shots hit the
+      thick side/glacis, plunging shots hit the thin top/deck. Terrain decides what you can even reach.
+      Step through the cards below (&larr;/&rarr; keys or the buttons). The
+      <b style="color:var(--red)">red-framed cards</b> are the make-or-break ideas.</p>
+  </div>
+
+  <div id="dots"></div>
+
+  <!-- =================== CARDS =================== -->
+  <div id="deck"></div>
+
+  <div id="pager">
+    <button class="pbtn ghost" id="prevBtn">&larr; PREV</button>
+    <span id="pgnum"></span>
+    <button class="pbtn" id="nextBtn">NEXT &rarr;</button>
+  </div>
+</div>
+
+<script src="tutorial.js"></script>
+</body>
+</html>

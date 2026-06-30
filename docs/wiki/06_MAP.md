@@ -51,11 +51,26 @@ One JSON, one coordinate frame — so the **web viewer (Three.js)**, the **Unity
 **printable STL** all line up from one source of truth (free data, no API keys; attribution required
 — Copernicus DEM, © OpenStreetMap contributors ODbL, Open-Meteo CC BY 4.0).
 
+## Movement on the map
+- **Slopes** slow crabs; **cliffs (≈50°+) are impassable** — the **SLOPE / GRADIENT** overlay shades
+  the terrain gentle→moderate→steep→cliff (green→amber→orange→red) so you can read trafficability and
+  route around steep ground.
+- **Water** is crossable by **amphibious** crabs (any depth, slowed); non-amphibious crabs stop at the
+  shore — the harbour becomes a flanking corridor (02_CRAB_DESIGN).
+- **Precipitation** slows everyone.
+
 ## Camera & overlays
 - **WASD free-fly camera** — look around the map freely to plan positions and read the terrain.
-- **Suburb overlay** view mode — district boundaries/labels.
+- **Suburb overlay** view mode — district boundaries/labels (46 Sydney localities).
 - **Fog-of-war LOS shading** — terrain is shaded by what your crabs can currently see (03_COMBAT).
-- **Immunity-zone & fire-shadow overlays** — the map draws each gun's **dead-space / fire shadow**
-  behind crests (flat vs indirect, at different ranges) and the **immunity band** for a selected
-  crab vs a chosen enemy shell size, so you can read penetration depth and safe positioning straight
-  off the terrain.
+- **SLOPE / trafficability overlay** — steepness/cliff shading (above).
+- **FIRE ANALYSIS overlay** — for the selected crab: each trajectory's **dead-space / fire shadow**
+  (direct ≈84% dead space, oblique ≈8%, mortar ≈0%), the **angle-of-fall deck-vs-side** readout, and
+  the **immunity band** vs a chosen enemy shell — read penetration depth & safe positioning off the terrain.
+
+## Coming: comms & intelligence fog (design captured)
+A command-and-control layer is designed in `docs/INTELLIGENCE_LAYER.md`: **comms are line-of-sight
+(laser/tight-beam)** because radio is too jammed — a crab behind a ridge can fall off the **comms
+net** (you lose control & live intel; only a fading **last-known / ghost** position remains). Relays,
+recon/relay drones, comms-mast damage, jamming, RDF detection, and camouflage feed it — reusing the
+existing LOS + viewshed + drone + EW systems.

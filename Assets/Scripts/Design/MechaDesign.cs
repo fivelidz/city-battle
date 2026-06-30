@@ -15,6 +15,7 @@ namespace CityBattle.Design
     public class MechaDesign
     {
         public string designName = "NEW PATTERN";
+        public string className = "";   // custom class/line name (RtW-style), optional
         public int chassisId;
         public int armorMaterialId;
 
@@ -35,6 +36,53 @@ namespace CityBattle.Design
         public ChassisDef Chassis(Database db) => db.ChassisById(chassisId);
         public ArmorDef ArmorMat(Database db) =>
             db.Armors.Find(a => a.id == armorMaterialId);
+
+        /// <summary>Largest fitted gun calibre (mm), 0 if unarmed.</summary>
+        public float MaxBoreMm(Database db)
+        {
+            float b = 0f;
+            foreach (var id in weaponGunIds) b = Mathf.Max(b, db.GunById(id).caliberMm);
+            return b;
+        }
+
+        /// <summary>
+        /// Derived Rule-the-Waves class code (DD/CL/CA/BC/BB/CV/Recon), from the FINISHED stats:
+        /// tonnage, max bore, belt (glacis) thickness, speed and role — mirroring the web Foundry.
+        /// Up-gun & up-armour a Line and it reads as a heavy cruiser; strip the belt for speed and
+        /// keep big guns and it reads as a battlecruiser.
+        /// </summary>
+        public string DerivedClassCode(Database db)
+        {
+            var c = Chassis(db);
+            float mass = c.massBudgetT;
+            float bore = MaxBoreMm(db);
+            float belt = glacisMm;
+            float speed = c.baseSpeedKmh;
+            bool droneHeavy = droneIds.Count >= 2 && bore <= 130f;
+
+            if (c.cls == ChassisClass.Recon) return "Recon";
+            if (droneHeavy || c.cls == ChassisClass.Carrier) return "CV";
+
+            // Base rank from tonnage + bore.
+            string code;
+            if (mass < 70f || bore < 90f) code = "DD";
+            else if (mass < 140f || bore < 130f) code = "CL";
+            else if (mass < 300f || bore < 230f) code = "CA";
+            else code = "BB";
+
+            // Battlecruiser: battleship-grade guns on a fast, lighter-armoured hull.
+            if (bore >= 200f && speed >= 36f && belt < 180f) code = "BC";
+            // A heavy hull stripped of belt for speed reads as BC, not BB.
+            if (code == "BB" && speed >= 32f && belt < 200f) code = "BC";
+            return code;
+        }
+
+        public static string ClassName(string code) => code switch
+        {
+            "Recon" => "scout strider", "DD" => "destroyer-crab", "CL" => "light cruiser-crab",
+            "CA" => "heavy cruiser-crab", "BC" => "battlecruiser-crab", "BB" => "battle-crab",
+            "CV" => "drone carrier-crab", _ => code
+        };
 
         /// <summary>Approx surface area (m^2) per zone for mass calc — scales with chassis size.</summary>
         static (float carapace, float glacis, float flank, float legs, float cupola, float mantlet)

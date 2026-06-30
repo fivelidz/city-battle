@@ -118,11 +118,14 @@ Carrying a jammer or CUAS turret means **less weight for guns/armour** — a rea
 ## Amphibious build option
 **Amphibious** is a buildable option enabling **strategic water crossings** (e.g. crossing Sydney
 Harbour, see 06_MAP):
-- **Early amphibious:** the crab can wade/cross water but **cannot fire while in the water**.
+- An amphibious crab can **cross any water** (any depth) — it's just **slowed** while wading. A
+  **non-amphibious** crab is stopped at the shoreline.
+- **Early amphibious:** the crab **cannot fire while in the water**.
 - **Later tech:** firing while in water is allowed but with an **accuracy penalty**.
 
 This turns water from a hard wall into a tactical corridor — flank an enemy by fording where they
-don't expect a gun line.
+don't expect a gun line. The real movement gate is **terrain steepness**: gentle slopes slow you,
+and **cliffs (≈50°+) are impassable** — you must route around them (see the SLOPE overlay, 06_MAP).
 
 ## Tech-gated availability & custom names
 - Every chassis, gun, armour material, sensor, EW module and drone has a **`year_available`** and is
