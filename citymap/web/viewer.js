@@ -83,7 +83,10 @@
   var units = [], selected = null;
   var show = { los: true, range: true, bld: true, wire: false, wind: false, rain: false,
                suburbs: QS.get("suburbs") === "1", fogcull: QS.get("fogcull") === "1",
-               fire: false };
+               fire: false, slope: false };
+
+  // ?slope=1 force-enables the SLOPE / trafficability overlay for screenshots.
+  if (QS.get("slope") === "1") { show.slope = true; show.los = false; }
 
   // ---- FIRE ANALYSIS state ----
   // trajectory mode: "direct" (flat, lots of dead space) | "oblique" (arced howitzer, less)
@@ -991,6 +994,68 @@
     var dz = H[zu * res + x] - H[zd * res + x];
     return Math.min(1, Math.sqrt(dx * dx + dz * dz) / (cell * 1.5));
   }
+  // TRUE gradient = rise/run = sqrt(dx^2+dz^2)/run, an unclamped tan(angle) value.
+  // 0 = flat, 1 = 45deg, ~1.19 = 50deg (crab cliff limit). Uses central differences
+  // so the run between the sampled neighbours is 2*cell (and 2*rz in z).
+  function gradientAt(H, res, x, z, cell, rz) {
+    var xl = Math.max(0, x - 1), xr = Math.min(res - 1, x + 1);
+    var zd = Math.max(0, z - 1), zu = Math.min(res - 1, z + 1);
+    var runX = (xr - xl) * cell, runZ = (zu - zd) * rz;
+    var dx = (H[z * res + xr] - H[z * res + xl]) / (runX || cell);
+    var dz = (H[zu * res + x] - H[zd * res + x]) / (runZ || cell);
+    return Math.sqrt(dx * dx + dz * dz);     // tan(slope angle)
+  }
+  // Crab trafficability thresholds (rise/run). Tuned to brief: cliff > ~1.2 (~50deg).
+  var SLOPE_T = { moderate: 0.30, steep: 0.70, cliff: 1.20 };
+  // Bin a gradient into 0=gentle 1=moderate 2=steep 3=cliff.
+  function slopeBin(g) {
+    if (g >= SLOPE_T.cliff) return 3;
+    if (g >= SLOPE_T.steep) return 2;
+    if (g >= SLOPE_T.moderate) return 1;
+    return 0;
+  }
+
+  // ---------- SLOPE / TRAFFICABILITY OVERLAY ----------
+  // Recolours every terrain vertex by steepness so players can read where crab-mechas
+  // are slowed (moderate/steep) or completely blocked (cliffs). Drives the SAME per-vertex
+  // colour multiplier as the viewshed/fire overlays, so it cleanly restores on toggle-off.
+  // Water (height <= water_level_m) is left at neutral so the water plane reads as water.
+  function computeSlopeOverlay() {
+    if (!terrainMesh) return;
+    var t = map.terrain, res = t.res, H = t.heights, cell = t.cell_m;
+    var wlevel = map.water_level_m;
+    var rz = (map.size_m[1] / (res - 1));   // metres per grid row in z (north)
+    var colors = terrainMesh.geometry.attributes.color;
+    // Tint multipliers per bin (multiply the baked topo texture). Gentle keeps natural
+    // ground (slight cool-green lift); steeper bins push amber -> orange -> red.
+    //   0 GENTLE  : near-neutral, faint green  (passable, full speed)
+    //   1 MODERATE: amber/yellow               (slowed)
+    //   2 STEEP   : orange                     (very slow)
+    //   3 CLIFF   : red                        (impassable)
+    var BIN = [
+      [0.82, 1.02, 0.86],   // gentle  - desaturated green wash
+      [1.30, 1.05, 0.42],   // moderate- amber
+      [1.45, 0.78, 0.34],   // steep   - orange
+      [1.55, 0.36, 0.30],   // cliff   - red
+    ];
+    for (var zi = 0; zi < res; zi++) {
+      for (var xi = 0; xi < res; xi++) {
+        var idx = zi * res + xi;
+        if (H[idx] <= wlevel) { colors.setXYZ(idx, 1, 1, 1); continue; }  // water: neutral
+        var g = gradientAt(H, res, xi, zi, cell, rz);
+        var b = slopeBin(g);
+        var c = BIN[b];
+        // within steep/cliff bins, brighten a touch with severity so ridgelines pop
+        if (b >= 2) {
+          var sev = clamp((g - SLOPE_T.steep) / (SLOPE_T.cliff - SLOPE_T.steep), 0, 1.4);
+          colors.setXYZ(idx, c[0] + sev * 0.10, c[1], c[2]);
+        } else {
+          colors.setXYZ(idx, c[0], c[1], c[2]);
+        }
+      }
+    }
+    colors.needsUpdate = true;
+  }
   function heightAt(xm, zm) {
     var tf = terrainField; if (!tf) return 0;
     var fx = clamp(xm / tf.cell, 0, tf.res - 1.001);
@@ -1069,11 +1134,19 @@
     if (overlayGroup) scene.remove(overlayGroup);
     overlayGroup = new THREE.Group(); scene.add(overlayGroup);
     var u = selected || units[0];
-    if (!u) { clearViewshed(); return; }
+    if (!u) {
+      if (show.slope) computeSlopeOverlay(); else clearViewshed();
+      return;
+    }
     var d = u.userData;
 
-    // FIRE ANALYSIS takes over the terrain shading when active (replaces plain viewshed).
-    if (show.fire) {
+    // SLOPE / trafficability overlay takes priority over the analysis shaders when on.
+    if (show.slope) {
+      if (fireGroup) { scene.remove(fireGroup); fireGroup = null; }
+      computeSlopeOverlay();
+      updateFireReadout(null);   // hide fire panel if it was open
+    } else if (show.fire) {
+      // FIRE ANALYSIS takes over the terrain shading when active (replaces plain viewshed).
       computeFireAnalysis(u);
       buildFireRings(u);
       updateFireReadout(u);
@@ -1185,20 +1258,38 @@
     }
     document.getElementById("tFire").onclick = function () {
       show.fire = !show.fire;
-      if (show.fire) { show.los = false; }            // fire shading replaces viewshed
+      if (show.fire) { show.los = false; show.slope = false; syncSlopeUI(); }  // fire shading replaces viewshed/slope
       else { show.los = true; }
       document.getElementById("fire").style.display = show.fire ? "block" : "none";
       syncFireUI(); rebuildOverlays();
     };
     function setTraj(m) {
       fireMode = m;
-      if (!show.fire) { show.fire = true; show.los = false; document.getElementById("fire").style.display = "block"; }
+      if (!show.fire) { show.fire = true; show.los = false; show.slope = false; syncSlopeUI(); document.getElementById("fire").style.display = "block"; }
       syncFireUI(); rebuildOverlays();
     }
     document.getElementById("fDirect").onclick  = function () { setTraj("direct"); };
     document.getElementById("fOblique").onclick = function () { setTraj("oblique"); };
     document.getElementById("fMortar").onclick  = function () { setTraj("mortar"); };
     syncFireUI();
+
+    // ---- SLOPE / TRAFFICABILITY toggle (mutually exclusive with fire + viewshed) ----
+    function syncSlopeUI() {
+      document.getElementById("tSlope").classList.toggle("on", show.slope);
+      document.getElementById("slopeLeg").style.display = show.slope ? "block" : "none";
+    }
+    document.getElementById("tSlope").onclick = function () {
+      show.slope = !show.slope;
+      if (show.slope) {
+        // turning slope on shuts down the competing terrain shaders
+        show.fire = false; show.los = false;
+        document.getElementById("fire").style.display = "none";
+      } else {
+        show.los = true;                       // restore the default viewshed
+      }
+      syncSlopeUI(); syncFireUI(); rebuildOverlays();
+    };
+    syncSlopeUI();
     var vS = document.getElementById("vShaded"), vE = document.getElementById("vElev");
     vS.classList.toggle("on", viewMode === "shaded"); vE.classList.toggle("on", viewMode === "elevation");
     vS.onclick = function () { viewMode = "shaded"; vS.classList.add("on"); vE.classList.remove("on"); recolorTerrain(); };

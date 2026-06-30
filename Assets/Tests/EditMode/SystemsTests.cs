@@ -78,15 +78,29 @@ namespace CityBattle.Tests
         }
 
         [Test]
-        public void Amphibious_BlockedByDeepWater()
+        public void Amphibious_CrossesDeepWater()
         {
-            var t = FlatWithChannel(20f, -10f, 0f);  // deep channel (-10m) > wade depth
-            var u = Mk("WADER", ChassisClass.Line, new Vector3(400, 0, 300), t);
-            u.Amphibious = true; u.MaxWadeDepthM = 4f;
+            // New rule: amphibious crabs cross ANY water depth (just slowed).
+            var t = FlatWithChannel(20f, -30f, 0f);  // very deep channel
+            var u = Mk("SWIMMER", ChassisClass.Siege, new Vector3(400, 0, 300), t);
+            u.Amphibious = true;
             u.SetMove(new Vector3(400, 0, 780));
-            for (int i = 0; i < 1500; i++) u.TickMovement(t, SimClock.SIM_DT);
-            // -10m channel exceeds the 4m wade depth -> blocked at the near edge of deep water.
-            Assert.Less(u.Position.z, 500f, "Deep water beyond wade depth must block even an amphibious crab.");
+            for (int i = 0; i < 9000; i++) u.TickMovement(t, SimClock.SIM_DT);
+            Assert.Greater(u.Position.z, 700f, "Amphibious crab should cross even deep water now.");
+        }
+
+        [Test]
+        public void Cliff_BlocksMovement()
+        {
+            // A vertical cliff (very steep rise) is impassable; the crab stops at its base.
+            int n = 80; float cell = 12f; var hm = new float[n, n];
+            for (int x = 0; x < n; x++) for (int z = 0; z < n; z++)
+                hm[x, z] = z >= 45 ? 400f : 10f;   // a 390m wall starting at z=45 (540m)
+            var t = new TerrainField(hm, cell, Vector3.zero);
+            var u = Mk("CLIMBER", ChassisClass.Line, new Vector3(400, 0, 300), t);
+            u.SetMove(new Vector3(400, 0, 700));
+            for (int i = 0; i < 2000; i++) u.TickMovement(t, SimClock.SIM_DT);
+            Assert.Less(u.Position.z, 540f, "A crab cannot climb a sheer cliff — it stops at the base.");
         }
 
         [Test]

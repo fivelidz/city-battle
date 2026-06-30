@@ -148,24 +148,26 @@ namespace CityBattle.Units
             // Precipitation (rain/mud) slows movement.
             speed *= Mathf.Clamp01(precipFactor);
 
-            // Wading: amphibious crabs cross shallow water (slowed); deep water / non-amphibious = blocked.
+            // Water: amphibious crabs cross ANY depth (just slowed — simple & clear for players).
+            // Non-amphibious crabs are stopped at the shoreline. (No wade-depth limit anymore.)
             float stepDepth = terrain.WaterDepthAt(flatPos.x + dir.x * 2f, flatPos.z + dir.z * 2f);
             if (stepDepth > 0.2f)
             {
-                if (!Amphibious || stepDepth > MaxWadeDepthM)
-                {
-                    // Cannot enter the water — stop at the shoreline.
-                    Moving = false; Velocity = Vector3.zero; return;
-                }
-                speed *= 0.45f;   // wading drag
+                if (!Amphibious) { Moving = false; Velocity = Vector3.zero; return; }
+                speed *= 0.45f;   // wading/swimming drag (any depth)
             }
 
-            // Slope slows movement (uphill penalty).
+            // Terrain steepness: gentle slopes slow you; CLIFFS (very steep) are impassable.
             float step = Mathf.Min(speed * dt, dist);
             Vector3 next = flatPos + dir * step;
             float groundNext = terrain.HeightAt(next.x, next.z);
             float groundNow = terrain.HeightAt(Position.x, Position.z);
-            float slope = (groundNext - groundNow) / Mathf.Max(step, 0.001f);
+            float slope = (groundNext - groundNow) / Mathf.Max(step, 0.001f);   // rise/run (tan of angle)
+            if (slope > MaxClimbSlope)
+            {
+                // Too steep to climb — a cliff. Stop (the player must route around it).
+                Moving = false; Velocity = Vector3.zero; return;
+            }
             if (slope > 0.3f) next = flatPos + dir * step * Mathf.Clamp01(1f - (slope - 0.3f)); // uphill drag
 
             Position = new Vector3(next.x, groundNext, next.z);
@@ -174,6 +176,10 @@ namespace CityBattle.Units
             WaterDepthM = terrain.WaterDepthAt(Position.x, Position.z);
             InWater = WaterDepthM > 0.2f;
         }
+
+        /// <summary>Max climbable slope (rise/run). Above this = a cliff, impassable. ~1.0 = 45 deg.
+        /// Bigger/heavier crabs climb a touch better; tune per chassis later.</summary>
+        public float MaxClimbSlope = 1.2f;   // ~50 degrees
 
         /// <summary>Can this crab fire right now? Amphibious crabs in water can only fire if CanFireInWater.</summary>
         public bool CanFireNow => CanShoot && (!InWater || CanFireInWater);

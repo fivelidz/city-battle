@@ -24,8 +24,8 @@
   #top .t{color:var(--orange);font-weight:bold;letter-spacing:.3em;font-size:13px}
   #top .r{margin-left:auto;color:var(--dim);font-size:11px;letter-spacing:.12em}
   #left{top:42px;left:10px;width:215px}
-  #legend{top:42px;right:10px;width:194px}
-  #wx{top:498px;right:10px;width:194px}
+  #legend{top:42px;right:10px;width:194px;max-height:calc(100vh - 130px);overflow-y:auto}
+  #wx{bottom:62px;right:10px;width:194px}
   #unit{bottom:10px;left:10px;width:270px;display:none}
   #ctrls{bottom:10px;right:10px;display:flex;gap:6px}
   .btn{background:rgba(38,46,42,.55);border:1px solid var(--hair);color:var(--amber);
@@ -82,6 +82,17 @@
   <div class="tg">
     <button class="btn on" id="vShaded">STANDARD SHADED</button>
     <button class="btn" id="vElev">COLOURED ELEVATION</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Trafficability</div>
+  <div class="tg">
+    <button class="btn" id="tSlope">SLOPE / GRADIENT</button>
+  </div>
+  <div id="slopeLeg" style="display:none">
+    <div class="leg"><span class="sw" style="background:#6fae6a"></span> GENTLE &middot; full speed</div>
+    <div class="leg"><span class="sw" style="background:#c8a23a"></span> MODERATE &middot; slowed</div>
+    <div class="leg"><span class="sw" style="background:#b56a2a"></span> STEEP &middot; very slow</div>
+    <div class="leg"><span class="sw" style="background:#9a3a33"></span> CLIFF &middot; impassable</div>
+    <div class="row dim" style="margin-top:4px;font-size:9px;line-height:1.5;letter-spacing:.02em">STEEP terrain slows crabs; CLIFFS are impassable &mdash; route around them.</div>
   </div>
   <div class="hdr" style="margin-top:9px">Toggles</div>
   <div class="tg">
