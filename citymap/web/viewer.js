@@ -10,19 +10,91 @@
     ["sydney_harbour", "Sydney - Harbour & CBD (assault)"],
   ];
 
+  // ---------------------------------------------------------------------------
+  // SUBURB / LOCALITY OVERLAY  (edit / add more here)
+  // Each entry: [name, lon, lat]. Projected into the map's local-metre frame via the
+  // same equirectangular transform the pipeline uses (see MAP_FORMAT.md):
+  //   x = (lon - west)  * 111320 * cos(midlat)
+  //   z = (lat - south) * 111320
+  // Only localities whose projected (x,z) falls inside the loaded map's size_m are shown.
+  // Centroids are hand-placed approximate suburb centres around Sydney Harbour / Eastern Suburbs
+  // / Lower North Shore — the area covered by the sydney + sydney_harbour maps.
+  // ---------------------------------------------------------------------------
+  var SUBURBS = [
+    ["The Rocks",       151.2089, -33.8599],
+    ["Sydney CBD",      151.2093, -33.8688],
+    ["Barangaroo",      151.2010, -33.8615],
+    ["Millers Point",   151.2010, -33.8580],
+    ["Dawes Point",     151.2085, -33.8550],
+    ["Walsh Bay",       151.2040, -33.8560],
+    ["Kirribilli",      151.2170, -33.8470],
+    ["Milsons Point",   151.2120, -33.8460],
+    ["McMahons Point",  151.2030, -33.8440],
+    ["North Sydney",    151.2070, -33.8400],
+    ["Neutral Bay",     151.2200, -33.8330],
+    ["Cremorne",        151.2280, -33.8290],
+    ["Cremorne Point",  151.2310, -33.8420],
+    ["Mosman",          151.2440, -33.8290],
+    ["Cremorne Junction",151.2270,-33.8260],
+    ["Potts Point",     151.2250, -33.8700],
+    ["Woolloomooloo",   151.2200, -33.8690],
+    ["Elizabeth Bay",   151.2280, -33.8720],
+    ["Darlinghurst",    151.2210, -33.8790],
+    ["Rushcutters Bay", 151.2300, -33.8740],
+    ["Surry Hills",     151.2110, -33.8850],
+    ["Paddington",      151.2270, -33.8850],
+    ["Edgecliff",       151.2390, -33.8790],
+    ["Darling Point",   151.2380, -33.8700],
+    ["Woollahra",       151.2420, -33.8870],
+    ["Double Bay",      151.2440, -33.8770],
+    ["Bellevue Hill",   151.2580, -33.8800],
+    ["Point Piper",     151.2520, -33.8650],
+    ["Rose Bay",        151.2680, -33.8700],
+    ["Vaucluse",        151.2780, -33.8560],
+    ["Watsons Bay",     151.2820, -33.8420],
+    ["Dover Heights",   151.2790, -33.8730],
+    ["Bondi",           151.2740, -33.8900],
+    ["Bondi Junction",  151.2500, -33.8920],
+    ["Woolwich",        151.1730, -33.8400],
+    ["Hunters Hill",    151.1500, -33.8330],
+    ["Birchgrove",      151.1810, -33.8500],
+    ["Balmain",         151.1810, -33.8580],
+    ["Balmain East",    151.1900, -33.8560],
+    ["Pyrmont",         151.1950, -33.8700],
+    ["Glebe",           151.1860, -33.8800],
+    ["Ultimo",          151.1980, -33.8810],
+    ["Chippendale",     151.1990, -33.8880],
+    ["Waverton",        151.1980, -33.8380],
+    ["Lavender Bay",    151.2070, -33.8440],
+  ];
+
   var COL = {
     bg: 0x0b0d0c, water: 0x16302e, los: 0x6db48f, range: 0xb0822c,
     friend: 0x3e7a74, hostile: 0x9a3a33, civ: 0x7a6a3a,
   };
 
-  var viewMode = (new URLSearchParams(location.search).get("mode") === "elevation") ? "elevation" : "shaded";
+  var QS = new URLSearchParams(location.search);
+  var viewMode = (QS.get("mode") === "elevation") ? "elevation" : "shaded";
 
   var scene, camera, renderer, controls, raycaster, mouse;
   var map = null, terrainMesh = null, terrainField = null, buildingsGroup = null;
   var unitsGroup = null, overlayGroup = null, wireMesh = null;
-  var windGroup = null, rainGroup = null;
+  var windGroup = null, rainGroup = null, suburbGroup = null;
   var units = [], selected = null;
-  var show = { los: true, range: true, bld: true, wire: false, wind: false, rain: false };
+  var show = { los: true, range: true, bld: true, wire: false, wind: false, rain: false,
+               suburbs: QS.get("suburbs") === "1", fogcull: QS.get("fogcull") === "1" };
+
+  // ---- FLY CAMERA state ----
+  var fly = {
+    on: false,
+    keys: {},                 // currently-pressed movement keys
+    yaw: 0, pitch: 0,         // look angles (radians)
+    speed: 0,                 // base units/sec, set when map loads (scales with map size)
+    dragging: false, lastX: 0, lastY: 0,
+    clock: null,
+  };
+  var buildingMeshes = [];    // chunked building meshes (for fog-cull); fallback: single merged mesh
+  var buildingChunks = [];    // [{mesh, cx, cz, top}] centroid metadata per chunk for fog-cull
 
   // ---------- boot ----------
   function init() {
@@ -47,8 +119,11 @@
 
     raycaster = new THREE.Raycaster(); mouse = new THREE.Vector2();
 
+    fly.clock = new THREE.Clock();
+
     buildCitySelect();
     bindUI();
+    bindFly();
     addEventListener("resize", onResize);
     renderer.domElement.addEventListener("click", onClick);
     loadCity("sydney");   // default to the large 32km theatre
@@ -77,11 +152,12 @@
   }
 
   function clearScene() {
-    [terrainMesh, buildingsGroup, unitsGroup, overlayGroup, wireMesh, windGroup, rainGroup].forEach(function (o) {
+    [terrainMesh, buildingsGroup, unitsGroup, overlayGroup, wireMesh, windGroup, rainGroup, suburbGroup].forEach(function (o) {
       if (o) { scene.remove(o); }
     });
     terrainMesh = buildingsGroup = unitsGroup = overlayGroup = wireMesh = null;
-    windGroup = rainGroup = null;
+    windGroup = rainGroup = suburbGroup = null;
+    buildingMeshes = []; buildingChunks = [];
     units = []; selected = null;
     document.getElementById("unit").style.display = "none";
   }
@@ -136,6 +212,9 @@
     // ----- weather overlays (wind arrows, rain) + readout -----
     buildWeather();
 
+    // ----- suburb / locality overlay (labels + boundary markers) -----
+    buildSuburbs();
+
     // ----- demo units + overlays -----
     placeDemoUnits();
     selected = units[0] || null;     // select a unit so the viewshed shows on load
@@ -156,26 +235,70 @@
 
   var waterMesh = null, buildings_water = null;
 
+  // Buildings are split into a coarse spatial GRID of merged chunks. One merged mesh would be
+  // fastest, but the FOG-CULL feature needs to dim/hide buildings outside the selected unit's
+  // viewshed — so we bucket buildings into NxN chunks (still only ~36-64 draw calls) and toggle /
+  // tint whole chunks. Each chunk keeps its centroid so fog-cull can test it against LOS+range.
+  var BLD_CHUNKS = 8;   // grid of chunks per axis (8x8 = 64 chunks max)
+
   function buildBuildings() {
     buildingsGroup = new THREE.Group();
+    buildingMeshes = []; buildingChunks = [];
+    var W = map.size_m[0], L = map.size_m[1];
     // Building footprints are in the SAME local-metre frame (x=east, z=north) as the terrain grid.
-    // Merge all footprints into ONE BufferGeometry for performance (18k buildings), extruded from
-    // each building's terrain base up to base+height. Vertex colour by height for a city look.
-    var verts = [], cols = [];
     var lowC = [0.30, 0.33, 0.30], midC = [0.40, 0.43, 0.40], hiC = [0.55, 0.57, 0.55];
     var n = map.buildings.length;
+
+    // bucket building indices by chunk
+    var nc = BLD_CHUNKS;
+    var buckets = {};   // key "cz_cx" -> { verts, cols, minX, maxX, minZ, maxZ, sumX, sumZ, maxTop, cnt }
+    function bucketFor(cx, cz) {
+      var key = cz * nc + cx;
+      var bk = buckets[key];
+      if (!bk) { bk = buckets[key] = { verts: [], cols: [], sumX: 0, sumZ: 0, maxTop: 0, cnt: 0 }; }
+      return bk;
+    }
     for (var i = 0; i < n; i++) {
       var b = map.buildings[i];
-      addBuilding(b, verts, cols, lowC, midC, hiC);
+      var p = b.poly; if (!p || p.length < 3) continue;
+      // centroid (vertex average is fine for bucketing)
+      var ccx = 0, ccz = 0;
+      for (var v = 0; v < p.length; v++) { ccx += p[v][0]; ccz += p[v][1]; }
+      ccx /= p.length; ccz /= p.length;
+      var cx = clamp(Math.floor(ccx / W * nc), 0, nc - 1);
+      var cz = clamp(Math.floor(ccz / L * nc), 0, nc - 1);
+      var bk = bucketFor(cx, cz);
+      var topBefore = bk.verts.length;
+      addBuilding(b, bk.verts, bk.cols, lowC, midC, hiC);
+      if (bk.verts.length > topBefore) {
+        bk.sumX += ccx; bk.sumZ += ccz; bk.cnt++;
+        var top = (b.base_m || 0) + Math.max(3, b.h || 8);
+        if (top > bk.maxTop) bk.maxTop = top;
+      }
     }
-    var bg = new THREE.BufferGeometry();
-    bg.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
-    bg.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
-    bg.computeVertexNormals();
-    var bmesh = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.05 }));
-    buildingsGroup.add(bmesh);
+
+    Object.keys(buckets).forEach(function (key) {
+      var bk = buckets[key];
+      if (!bk.verts.length) return;
+      var bg = new THREE.BufferGeometry();
+      bg.setAttribute("position", new THREE.Float32BufferAttribute(bk.verts, 3));
+      bg.setAttribute("color", new THREE.Float32BufferAttribute(bk.cols, 3));
+      bg.computeVertexNormals();
+      var mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.05 });
+      var bmesh = new THREE.Mesh(bg, mat);
+      buildingsGroup.add(bmesh);
+      buildingMeshes.push(bmesh);
+      buildingChunks.push({
+        mesh: bmesh, mat: mat,
+        cx: bk.sumX / Math.max(1, bk.cnt),
+        cz: bk.sumZ / Math.max(1, bk.cnt),
+        top: bk.maxTop,
+      });
+    });
+
     buildingsGroup.visible = show.bld;
     scene.add(buildingsGroup);
+    applyFogCull();   // honour current fog-cull state on (re)build
   }
 
   // Triangulate a building footprint (fan) + extrude its walls; append to vert/col arrays.
@@ -315,6 +438,134 @@
   function dirText(deg) {
     var dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
     return dirs[Math.round(((deg % 360) / 22.5)) % 16];
+  }
+
+  // ---------- SUBURB / LOCALITY OVERLAY ----------
+  // Project the hardcoded SUBURBS list into the map's local-metre frame and place a floating
+  // canvas-sprite label + a small ground marker at each locality that falls inside the map.
+  function buildSuburbs() {
+    suburbGroup = new THREE.Group();
+    suburbGroup.visible = show.suburbs;
+    scene.add(suburbGroup);
+
+    if (!map || !map.bbox) return;
+    var west = map.bbox[0], south = map.bbox[1], east = map.bbox[2], north = map.bbox[3];
+    var midlat = (south + north) / 2;
+    var mPerLon = 111320 * Math.cos(midlat * Math.PI / 180);
+    var mPerLat = 111320;
+    var W = map.size_m[0], L = map.size_m[1];
+    var span = Math.max(W, L);
+    var lift = Math.max(120, span * 0.020);   // float labels above the terrain
+
+    var placed = 0;
+    for (var i = 0; i < SUBURBS.length; i++) {
+      var s = SUBURBS[i];
+      var x = (s[1] - west) * mPerLon;     // east metres from origin
+      var z = (s[2] - south) * mPerLat;    // north metres from origin
+      if (x < 0 || x > W || z < 0 || z > L) continue;   // outside this map
+      var gy = heightAt(x, z);
+
+      // floating text label (canvas sprite, muted Eva style)
+      var spr = makeLabelSprite(s[0], span);
+      spr.position.set(x, gy + lift, z);
+      suburbGroup.add(spr);
+
+      // thin "tether" line from the label down to the ground marker
+      var tg = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(x, gy + lift, z), new THREE.Vector3(x, gy + 4, z)]);
+      suburbGroup.add(new THREE.Line(tg, new THREE.LineBasicMaterial({
+        color: 0x6d8378, transparent: true, opacity: 0.30 })));
+
+      // ground boundary marker: a faint ring locating the locality centroid
+      var ringR = Math.max(60, span * 0.012);
+      var ring = new THREE.Mesh(
+        new THREE.RingGeometry(ringR * 0.9, ringR, 28),
+        new THREE.MeshBasicMaterial({ color: 0x7d9387, transparent: true, opacity: 0.28, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(x, gy + 3, z);
+      suburbGroup.add(ring);
+      placed++;
+    }
+    suburbGroup.userData = { placed: placed };
+  }
+
+  // Build a muted canvas-texture sprite for a suburb name. Sprites always face the camera and
+  // scale with the map so they stay legible whether you orbit out or fly low.
+  function makeLabelSprite(text, span) {
+    var pad = 18, fs = 40;
+    var cv = document.createElement("canvas");
+    var mctx = cv.getContext("2d");
+    mctx.font = "bold " + fs + "px DejaVu Sans Mono, monospace";
+    var tw = Math.ceil(mctx.measureText(text.toUpperCase()).width);
+    cv.width = tw + pad * 2; cv.height = fs + pad * 2;
+    var ctx = cv.getContext("2d");
+    // muted panel background
+    ctx.fillStyle = "rgba(13,17,16,0.72)";
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = "rgba(120,140,130,0.30)";
+    ctx.lineWidth = 2; ctx.strokeRect(1, 1, cv.width - 2, cv.height - 2);
+    // amber-ish muted text
+    ctx.font = "bold " + fs + "px DejaVu Sans Mono, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(176,130,44,0.95)";
+    ctx.fillText(text.toUpperCase(), cv.width / 2, cv.height / 2 + 2);
+
+    var tex = new THREE.CanvasTexture(cv);
+    tex.anisotropy = 4; tex.needsUpdate = true;
+    var mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false });
+    var spr = new THREE.Sprite(mat);
+    // world scale: keep the label a sensible fraction of the map; aspect from canvas
+    var hWorld = Math.max(120, span * 0.022);
+    var wWorld = hWorld * (cv.width / cv.height);
+    spr.scale.set(wWorld, hWorld, 1);
+    return spr;
+  }
+
+  // ---------- FOG-CULL LOD ----------
+  // When FOG CULL is on and a unit is selected, dim/hide building chunks that the unit cannot see
+  // (outside sight range OR terrain-blocked LOS). Reuses the same LOS test as the viewshed so the
+  // hidden buildings line up with the fog-of-war darkening on the terrain. Operates per-chunk
+  // (centroid test) so it stays cheap even with 18k buildings.
+  function applyFogCull() {
+    if (!buildingChunks.length) return;
+    // OFF, or buildings hidden, or no selection -> everything fully lit & visible
+    if (!show.fogcull || !show.bld || !selected) {
+      for (var i = 0; i < buildingChunks.length; i++) {
+        var c = buildingChunks[i];
+        c.mesh.visible = show.bld;
+        c.mat.color.setRGB(1, 1, 1);
+        c.mat.opacity = 1; c.mat.transparent = false;
+      }
+      return;
+    }
+    var d = selected.userData;
+    var t = map.terrain, res = t.res, H = t.heights, cell = t.cell_m;
+    var rz = (map.size_m[1] / (res - 1));
+    var sightM = (d.rangeM > 0 ? Math.max(d.rangeM, 8000) : 12000) * fogFactor();
+    var ex = d.x, ez = d.z, ey = d.eye + 8;
+
+    for (var k = 0; k < buildingChunks.length; k++) {
+      var ch = buildingChunks[k];
+      var dist = Math.hypot(ch.cx - ex, ch.cz - ez);
+      var visible;
+      if (dist > sightM) {
+        visible = false;
+      } else {
+        // test LOS to the top of the tallest building in the chunk (roofs poke over ridgelines)
+        var by = Math.max(heightAt(ch.cx, ch.cz) + 2, ch.top);
+        visible = losGrid(ex, ez, ey, ch.cx, ch.cz, by, res, H, cell, rz);
+      }
+      if (visible) {
+        ch.mesh.visible = true;
+        ch.mat.color.setRGB(1, 1, 1);
+        ch.mat.opacity = 1; ch.mat.transparent = false;
+      } else {
+        // darken + fade chunks the unit can't see (don't fully hide so the city silhouette stays
+        // faintly readable as "fogged" structure, matching the dark fog-of-war terrain)
+        ch.mesh.visible = true;
+        ch.mat.color.setRGB(0.20, 0.22, 0.26);
+        ch.mat.transparent = true; ch.mat.opacity = 0.32;
+      }
+    }
   }
 
   var terrainTex = null;
@@ -582,6 +833,9 @@
     // VIEWSHED light-cast: highlight everything this unit can see.
     if (show.los) computeViewshed(u); else clearViewshed();
 
+    // FOG-CULL LOD: dim/hide buildings outside this unit's sight (recompute on selection change).
+    applyFogCull();
+
     // range ring (follows terrain)
     if (show.range && d.rangeM > 0) {
       var ringPts = [];
@@ -662,6 +916,10 @@
   function bindUI() {
     tog("tLOS", "los"); tog("tRange", "range"); tog("tBld", "bld"); tog("tWire", "wire");
     tog("tWind", "wind"); tog("tRain", "rain");
+    tog("tSub", "suburbs"); tog("tFogCull", "fogcull");
+    document.getElementById("tSub").classList.toggle("on", show.suburbs);
+    document.getElementById("tFogCull").classList.toggle("on", show.fogcull);
+    document.getElementById("tFly").onclick = function () { setFly(!fly.on); };
     var vS = document.getElementById("vShaded"), vE = document.getElementById("vElev");
     vS.classList.toggle("on", viewMode === "shaded"); vE.classList.toggle("on", viewMode === "elevation");
     vS.onclick = function () { viewMode = "shaded"; vS.classList.add("on"); vE.classList.remove("on"); recolorTerrain(); };
@@ -673,10 +931,12 @@
       var el = document.getElementById(id);
       el.onclick = function () {
         show[key] = !show[key]; el.classList.toggle("on", show[key]);
-        if (key === "bld" && buildingsGroup) buildingsGroup.visible = show.bld;
+        if (key === "bld" && buildingsGroup) { buildingsGroup.visible = show.bld; applyFogCull(); }
         else if (key === "wire" && wireMesh) wireMesh.visible = show.wire;
         else if (key === "wind" && windGroup) windGroup.visible = show.wind;
         else if (key === "rain" && rainGroup) rainGroup.visible = show.rain;
+        else if (key === "suburbs" && suburbGroup) suburbGroup.visible = show.suburbs;
+        else if (key === "fogcull") applyFogCull();
         else rebuildOverlays();
       };
     }
@@ -686,13 +946,126 @@
     dir.multiplyScalar(f); camera.position.copy(controls.target).add(dir); controls.update();
   }
 
+  // ---------- FLY CAMERA ----------
+  // Free-fly WASDQE/RF camera. While active, OrbitControls is disabled (so they don't fight) and
+  // we drive camera.position + a yaw/pitch look direction each frame from held keys + mouse-drag.
+  function bindFly() {
+    addEventListener("keydown", function (e) {
+      var k = e.key.toLowerCase();
+      if (e.ctrlKey || e.metaKey || e.altKey) return;   // leave browser shortcuts alone
+      if (e.key === "Escape") { if (fly.on) setFly(false); return; }
+      // F toggles fly mode (bare press; not while focused on the city <select>)
+      if (k === "f" && !e.repeat && (!document.activeElement || document.activeElement.tagName !== "SELECT")) {
+        setFly(!fly.on); e.preventDefault(); return;
+      }
+      if (fly.on) {
+        // movement keys: W/S fwd-back, A/D strafe, R/E up, Q down (F is the toggle, not descend)
+        if ("wsadqer".indexOf(k) >= 0) { fly.keys[k] = true; e.preventDefault(); }
+        if (k === "shift") fly.keys.shift = true;
+      }
+    });
+    addEventListener("keyup", function (e) {
+      var k = e.key.toLowerCase();
+      if (k === "shift") fly.keys.shift = false;
+      else delete fly.keys[k];
+    });
+
+    var dom = renderer.domElement;
+    dom.addEventListener("mousedown", function (e) {
+      if (!fly.on || e.button !== 0) return;
+      fly.dragging = true; fly.lastX = e.clientX; fly.lastY = e.clientY;
+    });
+    addEventListener("mouseup", function () { fly.dragging = false; });
+    addEventListener("mousemove", function (e) {
+      if (!fly.on || !fly.dragging) return;
+      var dx = e.clientX - fly.lastX, dy = e.clientY - fly.lastY;
+      fly.lastX = e.clientX; fly.lastY = e.clientY;
+      var sens = 0.0035;
+      fly.yaw   -= dx * sens;
+      fly.pitch -= dy * sens;
+      var lim = Math.PI / 2 - 0.05;
+      fly.pitch = clamp(fly.pitch, -lim, lim);
+    });
+    // wheel adjusts fly speed (instead of orbit zoom) while flying
+    dom.addEventListener("wheel", function (e) {
+      if (!fly.on) return;
+      e.preventDefault();
+      var f = e.deltaY < 0 ? 1.15 : 0.87;
+      fly.speed = clamp(fly.speed * f, 30, 60000);
+    }, { passive: false });
+  }
+
+  // F (and the FLY CAM button) toggle this. Initialises yaw/pitch from the CURRENT camera look
+  // direction so the view doesn't jump when you enter fly mode.
+  function setFly(on) {
+    fly.on = on;
+    var btn = document.getElementById("tFly");
+    if (btn) btn.classList.toggle("on", on);
+    var hint = document.getElementById("flyHint");
+    if (hint) hint.style.display = on ? "block" : "none";
+    document.getElementById("status").textContent = on ? "FLY CAM" : "SECTOR ACTIVE";
+
+    if (on) {
+      controls.enabled = false;
+      // derive yaw/pitch from current camera->target direction
+      var dir = new THREE.Vector3().subVectors(controls.target, camera.position).normalize();
+      fly.pitch = Math.asin(clamp(dir.y, -1, 1));
+      fly.yaw = Math.atan2(dir.x, dir.z);
+      fly.keys = {};
+      // speed scales with map size: cross ~11km in ~12s at base, ~3s on shift-boost
+      var span = map ? Math.max(map.size_m[0], map.size_m[1]) : 11000;
+      fly.speed = span * 0.09;     // units/sec
+      fly.clock.getDelta();        // reset dt so first frame isn't a huge jump
+    } else {
+      controls.enabled = true;
+      // hand the look direction back to OrbitControls: keep position, retarget ahead of the camera
+      var fwd = flyForward();
+      controls.target.copy(camera.position).addScaledVector(fwd, Math.max(50, (map ? Math.max(map.size_m[0], map.size_m[1]) : 11000) * 0.06));
+      controls.update();
+    }
+  }
+
+  function flyForward() {
+    var cp = Math.cos(fly.pitch);
+    return new THREE.Vector3(Math.sin(fly.yaw) * cp, Math.sin(fly.pitch), Math.cos(fly.yaw) * cp);
+  }
+
+  function updateFly(dt) {
+    if (!fly.on) return;
+    var fwd = flyForward();
+    // strafe = forward x up (right-hand), kept horizontal
+    var up = new THREE.Vector3(0, 1, 0);
+    var right = new THREE.Vector3().crossVectors(fwd, up).normalize();
+    var move = new THREE.Vector3();
+    var k = fly.keys;
+    if (k.w) move.add(fwd);
+    if (k.s) move.sub(fwd);
+    if (k.d) move.add(right);
+    if (k.a) move.sub(right);
+    if (k.r || k.e) move.add(up);     // up
+    if (k.q) move.sub(up);            // down  (F is reserved as the fly-mode toggle)
+    var spd = fly.speed * (k.shift ? 4.0 : 1.0);
+    if (move.lengthSq() > 0) {
+      move.normalize().multiplyScalar(spd * dt);
+      camera.position.add(move);
+    }
+    // keep camera from sinking under terrain when flying low
+    if (terrainField) {
+      var minY = heightAt(camera.position.x, camera.position.z) + 6;
+      if (camera.position.y < minY) camera.position.y = minY;
+    }
+    camera.lookAt(new THREE.Vector3().addVectors(camera.position, fwd));
+  }
+
   // ---------- util ----------
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
   function mix(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
   function onResize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); }
   function animate() {
     requestAnimationFrame(animate);
-    controls.update();
+    var dt = fly.clock ? fly.clock.getDelta() : 0.016;
+    if (fly.on) updateFly(Math.min(dt, 0.1));
+    else controls.update();
     // animate rain falling (only when present + visible)
     if (rainPoints && rainGroup && rainGroup.visible && map) {
       var pos = rainPoints.geometry.attributes.position;

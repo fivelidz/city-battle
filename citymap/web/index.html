@@ -41,6 +41,10 @@
   #scan{position:fixed;inset:0;pointer-events:none;z-index:4;opacity:.045;
     background:repeating-linear-gradient(0deg,transparent 0 2px,#000 3px)}
   .hint{position:fixed;bottom:52px;right:10px;font-size:10px;color:var(--dim);text-align:right;line-height:1.9;letter-spacing:.04em}
+  #flyHint{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);display:none;
+    background:var(--panel);border:1px solid var(--amber);padding:8px 14px;z-index:6;
+    font-size:11px;letter-spacing:.10em;color:var(--ink);text-transform:uppercase;text-align:center;line-height:1.7}
+  #flyHint .k{color:var(--teal)} #flyHint .a{color:var(--amber);font-weight:bold;letter-spacing:.18em}
   #load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:30;color:var(--amber);letter-spacing:.3em}
 </style>
 </head>
@@ -85,11 +89,17 @@
     <button class="btn on" id="tRange">GUN RANGE</button>
     <button class="btn on" id="tBld">BUILDINGS</button>
     <button class="btn" id="tWire">CONTOUR WIRE</button>
+    <button class="btn" id="tSub">SUBURBS</button>
+    <button class="btn" id="tFogCull">FOG CULL</button>
   </div>
   <div class="hdr" style="margin-top:9px">Weather</div>
   <div class="tg">
     <button class="btn" id="tWind">WIND FIELD</button>
     <button class="btn" id="tRain">PRECIP</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Camera</div>
+  <div class="tg">
+    <button class="btn" id="tFly">FLY CAM &middot; F</button>
   </div>
 </div>
 
@@ -114,7 +124,15 @@
   <button class="btn" id="zout">&minus;</button>
   <button class="btn" id="rst">RESET</button>
 </div>
-<div class="hint">DRAG orbit &middot; WHEEL zoom &middot; CLICK a crab to inspect<br>map review viewer &mdash; shared data with the Unity game</div>
+<div class="hint">DRAG orbit &middot; WHEEL zoom &middot; CLICK a crab to inspect &middot; <span style="color:var(--amber)">F</span> = fly cam<br>map review viewer &mdash; shared data with the Unity game</div>
+
+<div id="flyHint">
+  <span class="a">FLY CAM ACTIVE</span> &nbsp;&middot;&nbsp;
+  <span class="k">W/S</span> fwd/back &middot; <span class="k">A/D</span> strafe &middot;
+  <span class="k">R/E</span> up &middot; <span class="k">Q</span> down &middot;
+  <span class="k">DRAG</span> look &middot; <span class="k">SHIFT</span> boost &middot; <span class="k">WHEEL</span> speed
+  <br><span class="dim" style="color:var(--dim)">press</span> <span class="a">F</span> <span class="dim" style="color:var(--dim)">again or</span> <span class="a">ESC</span> <span class="dim" style="color:var(--dim)">to return to orbit</span>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>

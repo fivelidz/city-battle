@@ -1,0 +1,86 @@
+# Glossary
+
+Every CITY BATTLE term — military doctrine and game mechanic — one concise line each.
+Cross-references: 01_FIRE_AND_BALLISTICS, 02_CRAB_DESIGN, 03_COMBAT, 04_RESEARCH, 05_CAMPAIGN, 06_MAP.
+
+- **Adjust fire** — ranging rounds while a spotter corrects fire onto the target.
+- **All-or-nothing** — armour scheme concentrating protection on the vitals, thin elsewhere (2046 tech).
+- **Amphibious** — build option letting a crab cross water; early = can't fire in water, later = fire with a penalty.
+- **Angle of fall** — how steeply a shell descends at impact; increases with range; decides side vs top hit.
+- **AP (armour-piercing)** — shell optimised to penetrate armour (vs HE for blast); `verpen`/`horpen` tables.
+- **Barrage** — sustained area fire on a line or zone.
+- **BB (battleship)** — heaviest guns + thickest belt, slow; here the Leviathan-class siege battle-crab.
+- **BC (battlecruiser)** — battleship-size guns on a fast, lighter-armoured hull (speed bought with armour).
+- **Beaten zone** — the dispersion ellipse where a gun's rounds fall; long along the range line, narrow across.
+- **Belt** — side armour (naval); here the **glacis/flank**; defeats shallow-angle (flat) hits.
+- **Bore / calibre** — gun barrel diameter (mm); the master stat driving shell, ROF, range, weight, cost.
+- **Bracketing** — walking shorts and overs onto a target until they converge into a straddle.
+- **Broadside** — the set of guns that can bear on a beam (side-on) target; the crab's max simultaneous fire.
+- **CA (heavy cruiser)** — larger tonnage, heavier guns/armour than a CL; e.g. Phalanx / Bastion.
+- **Carapace** — the crab's top/deck armour; struck by plunging/indirect fire and drone top-attack.
+- **Centreline** — the crab's long fore-aft axis; mains placed here fire to either broadside (most efficient).
+- **CL (light cruiser)** — medium tonnage/guns, fast, thin belt; e.g. Hoplite Line crab.
+- **Cone of fire / arc** — the bearings a mount can train on; blocked by hull, legs and other turrets.
+- **Cook-off** — ammunition detonation from a hit on the ammo bay (the magazine analogue); often a mission-kill.
+- **Counter-battery** — fire aimed at silencing the enemy's guns.
+- **Crest clearance** — the elevation a shell needs to clear an intervening crest; a flat gun may not manage it.
+- **Cupola** — the sensor/command head; a hit here blinds the crab's fire control & sight.
+- **CV (carrier)** — hull given to drones, light guns; here the Carrier-Crab Nimbus drone mothership.
+- **Danger close** — target near friendly units; requires tighter fire control.
+- **Datalink** — module sharing contacts/targeting across a lance and increasing drone-control capacity.
+- **Dead space** — ground behind a crest a given weapon can't hit; large for flat fire, near-none for mortars.
+- **Deck** — top armour (naval); here the **carapace**; defeats steep (plunging) hits.
+- **Defilade** — a position shielded from direct fire and observation by terrain.
+- **Direct fire** — flat-trajectory fire needing line of sight; hits the side/glacis; most accurate.
+- **Director firing** — centralised fire control laying all mounts together (2036 tech); big accuracy jump.
+- **Dispersion** — the natural scatter of rounds even when perfectly aimed (see beaten zone, probable error).
+- **DD (destroyer)** — small, fast, lightly armoured; here the Jackal skirmisher-crab.
+- **Drone** — active aerial agent (recon/loiter/strike/swarm); the late asymmetric unlock (torpedo-equivalent).
+- **EW (electronic warfare)** — jamming/spoofing/CUAS and their counters; the rock-paper-scissors layer.
+- **Fire for effect (FFE)** — adjustment good; fire the full effective volume now.
+- **Fire shadow** — the dead-space region a weapon can't reach behind terrain; drawn as a map overlay.
+- **Flank** — the crab's port/starboard side armour; exposed to flanking/broadside fire.
+- **Fog of war** — you only know what your crabs perceive (LOS + sensors + drones).
+- **Glacis** — the crab's frontal/bow armour; struck by direct fire from ahead.
+- **Grid mission** — target given by map grid coordinates.
+- **HE (high-explosive)** — blast shell for soft/topside targets (vs AP for armour).
+- **HorPen (horizontal penetration)** — plunging/top penetration; **rises** with range.
+- **Howitzer** — selectable-elevation gun; flexible arc, moderate dead space; bridges gun and mortar.
+- **Hull-down** — partial defilade exposing only the turret/carapace over a crest; you can fire, body hidden.
+- **Immunity zone** — the range band where neither side nor top armour can be penetrated by a given enemy gun.
+- **Indirect fire** — arced fire not needing LOS; relies on a spotter; reaches targets over terrain.
+- **Jammer** — EW module degrading enemy radio/satellite drones in a radius.
+- **Lance** — a group/formation of crabs operating together (the squadron analogue).
+- **Last-known position** — firing predicted at a lost contact's last reported spot.
+- **Legs** — leg clusters at bow & stern; damage degrades mobility; enough = immobilised (fixed battery).
+- **LOS (line of sight)** — a clear straight line over terrain/buildings; required for direct fire & spotting.
+- **Mantlet** — the gun-mount shield (turret-face armour analogue).
+- **Masking** — intervening terrain a trajectory would strike first, blocking a flat shot.
+- **Mission-kill** — a crab knocked out (immobile + disarmed, or structural/cook-off); there is **no sinking**.
+- **Mortar / high-angle fire** — very steep lob; near-zero dead space; the only way into deep defilade.
+- **Muzzle velocity** — shell speed leaving the barrel; higher = flatter, more pen, longer reach (rail/coil high).
+- **Plunging fire** — steeply-falling fire that strikes the top/carapace (long-range or lobbed).
+- **Polar mission** — target given as range + bearing from the observer.
+- **Predicted fire** — fired on computed data with no observer correction; faster but looser.
+- **Prestige / popularity** — political standing that keeps you in power; won/lost by results, losses and budget.
+- **Probable error (PE)** — statistical measure of dispersion (range PE & deflection PE); grows with range.
+- **Proliferation** — the spread of a tech to rivals once it exists in the world (leads are temporary).
+- **RtwP** — real-time-with-pause: issue orders while paused, resolve on unpause (Pause/1×/2×/4×).
+- **Recon drone** — unarmed flyer that extends vision over terrain, spotting defiladed targets for indirect fire.
+- **Registration** — calibrating fire corrections on a known point, then transferring them to nearby targets.
+- **Reverse slope** — the far side of a ridge; safe from enemy flat fire — they must lob or crest to engage.
+- **ROF (rate of fire)** — rounds/minute; falls as calibre rises.
+- **Skip-chance** — the `Chance%` a funded tech rolls per interval; misses carry points forward (stochastic research).
+- **Spider** — multi-leg chassis (Bastion); very stable, hard to immobilise; a CA-style gun platform.
+- **Straddle** — a salvo bracketing the target (shorts + overs); the cue that hits will follow.
+- **Superfiring** — a raised turret firing over the one in front (A over B / X over Y) so both bear.
+- **Tension** — per-rival 0–13 scale; gates budget and triggers war at 13.
+- **Theatre map** — full-city extent for large-class engagements (vs suburb-scale maps).
+- **Time on target (TOT)** — multiple guns timing rounds to land simultaneously for maximum shock.
+- **Turret-down** — fully hidden in defilade; must move up to hull-down to fire.
+- **Utility slot** — chassis mount for a sensor/EW/drone-bay/support module (placement selectable).
+- **VerPen (vertical penetration)** — face-on/side penetration; **drops** with range.
+- **Victory points (VP)** — the war scoreboard; the side with more when a war ends wins it.
+- **Viewshed** — the area visible from a position; ridges have large viewsheds, valleys small ones.
+- **Wing turret** — a mount placed to port/starboard; bears on one side only (less efficient than centreline).
+- **Year-gating** — a tech/component can't be researched or fitted before its `year_available`.
