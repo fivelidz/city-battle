@@ -10,7 +10,7 @@
 
 ## A. Map orientation & geography
 
-- **[~] A1 — MAP reads east-on-the-LEFT (needs coordinate-convention fix).** ROOT CAUSE FOUND
+- **[x] A1 — MAP reads east-on-the-LEFT (needs coordinate-convention fix).** ROOT CAUSE FOUND
   (deep investigation): the data is geographically correct — bbox `[W 151.18, S -33.9, E 151.3,
   N -33.79]`, and `x_m=(lon-west)*mPerLon` so **+X really is EAST**, `+Z` really is NORTH. The
   problem is a **handedness/display-convention** issue: in a right-handed `+X=east / +Z=north /
@@ -52,7 +52,7 @@
 - **[x] D3 — MOVEMENT SPEED should be INDICATED and adjustable via a SLIDER** (not just 1/2/3/4×
   buttons — a continuous slider, with the current speed shown as a readout). DONE: slider (0.25–8×)
   + live readout + `=`/`-` keys.
-- **[~] D5 — DISCRETE selectable play speeds** should be present (not only the continuous slider).
+- **[x] D5 — DISCRETE selectable play speeds** should be present (not only the continuous slider).
   Provide clear speed presets to click. Current presets 1×/2×/3×/4×; expand to include a
   slow/study speed (0.5×) and faster (6×/8×) so you can pick a distinct speed. (Slider covers the
   in-between; presets give one-click canonical speeds.)
@@ -72,10 +72,10 @@
   mortar shares the full max range — WRONG. Mortar = short range, near-vertical plunge, almost no
   dead zone. Cap mortar range well below the gun's flat max (it's a different, shorter-reaching
   high-angle regime).
-- **[ ] E3 — MORTAR ACCURACY:** high-angle/blind fire is the LOOSEST (biggest dispersion / beaten
+- **[~] E3 (accuracy ladder done via O1 dmgMult; beaten-zone/dispersion later) — MORTAR ACCURACY:** high-angle/blind fire is the LOOSEST (biggest dispersion / beaten
   zone). Reflect in accuracy once dispersion is modelled (ref §5). Note kept for the ballistics
   accuracy pass.
-- **[ ] E4 — RECORD where shells actually LAND** (impact points), and model **AMMUNITION** (finite
+- **[~] E4 (finite ammo + bar done; shell-impact RECORDING later) — RECORD where shells actually LAND** (impact points), and model **AMMUNITION** (finite
   rounds per gun, consumed per shot). Impacts logged/recorded; friendly hits recorded by location.
 
 ## F. Firing / targeting UX — the "maths-focused" fire panel
@@ -122,7 +122,7 @@
 
 ## J. Selected-unit panel
 
-- **[ ] J1 — Show a small ZOOMED-IN VISUAL of the unit itself** in the selected-unit panel (a live
+- **[x] J1 — Show a small ZOOMED-IN VISUAL of the unit itself** in the selected-unit panel (a live
   mini-render / portrait) so you can see what it is and how it's moving.
 
 ## K. Combat log
