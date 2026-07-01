@@ -2156,7 +2156,7 @@
     var spotMat = new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
     var spotTag = new THREE.Sprite(spotMat);
     spotTag.scale.set(mkSize * 1.9, mkSize * 0.52, 1);
-    spotTag.position.y = marker.position.y + mkSize * 0.30;
+    spotTag.position.y = marker.position.y + mkSize * 1.15;   // sits ABOVE the name label (name is at +0.7)
     spotTag.renderOrder = 22; g.add(spotTag);
 
     // OFF-NET ghost outline (a dashed red ring on the ground) — shown only when off the comms net
@@ -2301,25 +2301,43 @@
     var d = g.userData; if (!d.spotMat) return;
     if (d.side !== "hostile" || (d.cmd && d.cmd.ko)) { if (d.spotTag) d.spotTag.visible = false; return; }
     var sp = spottersOf(g);
-    var seeingOnly = sp.eyes.filter(function (n) { return sp.guns.indexOf(n) < 0; });
-    // On-map tag stays COMPACT (emoji + count); the NAMED breakdown is in the panel (AP1) when the
-    // enemy is selected.  ✛ firing (red) · 👁 seeing (teal).
-    var txt = "";
-    if (sp.guns.length) txt += "\u2725" + sp.guns.length + " ";
-    if (seeingOnly.length) txt += "\uD83D\uDC41" + seeingOnly.length;
-    txt = txt.trim();
-    var key = txt + "|" + (markersOn ? 1 : 0);
+    // On-map tag LISTS the actual units, one per line, with their icons:
+    //   ANZAC-01 👁      (sees)      ANZAC-02 👁✛   (sees + fires)      ANZAC-03 ✛   (fires only)
+    // Union of everyone with LOS or firing, stable order (sorted by name).
+    var byName = {};
+    sp.eyes.forEach(function (n) { (byName[n] = byName[n] || {}).see = true; });
+    sp.guns.forEach(function (n) { (byName[n] = byName[n] || {}).fire = true; });
+    var names = Object.keys(byName).sort();
+    var rows = names.map(function (n) {
+      var s = byName[n];
+      return { name: n, txt: n + "  " + (s.see ? "\uD83D\uDC41" : "") + (s.fire ? "\u2725" : ""), fire: !!s.fire };
+    });
+    var key = rows.map(function (r) { return r.txt; }).join("|") + "|" + (markersOn ? 1 : 0);
     if (d._spotKey === key) return; d._spotKey = key;
-    if (!txt || !markersOn) { d.spotTag.visible = false; d.spotMat.opacity = 0; return; }
-    var W = 128, H = 34, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    if (!rows.length || !markersOn) { d.spotTag.visible = false; d.spotMat.opacity = 0; return; }
+    // draw each row on its own line (left-aligned), auto-sized to the widest row.
+    var lineH = 26, padX = 10, W = 200, H = rows.length * lineH + 8;
+    var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
     var ctx = cv.getContext("2d");
-    ctx.font = "bold 19px DejaVu Sans Mono, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(10,14,12,0.72)"; ctx.fillRect(0, 6, W, H - 12);
-    ctx.fillStyle = sp.guns.length ? "#ff8a6a" : "#7fd6c6";
-    ctx.fillText(txt, W / 2, H / 2);
+    ctx.font = "bold 18px DejaVu Sans Mono, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    // measure widest row, resize canvas to fit
+    var maxW = 0; rows.forEach(function (r) { maxW = Math.max(maxW, ctx.measureText(r.txt).width); });
+    W = Math.ceil(maxW + padX * 2); cv.width = W; cv.height = H;
+    ctx = cv.getContext("2d");
+    ctx.font = "bold 18px DejaVu Sans Mono, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(10,14,12,0.78)"; ctx.fillRect(0, 0, W, H);
+    rows.forEach(function (r, i) {
+      ctx.fillStyle = r.fire ? "#ff8a6a" : "#7fd6c6";     // firing = red, seeing-only = teal
+      ctx.fillText(r.txt, padX, 4 + lineH * (i + 0.5));
+    });
     if (d.spotMat.map) d.spotMat.map.dispose();
     d.spotMat.map = new THREE.CanvasTexture(cv); d.spotMat.map.needsUpdate = true;
-    d.spotTag.scale.set(d.mkSize * 1.6, d.mkSize * 1.6 * (H / W), 1);
+    // scale the sprite to the canvas aspect so the text stays legible
+    var w2 = d.mkSize * 2.2;
+    var h2 = w2 * (H / W);
+    d.spotTag.scale.set(w2, h2, 1);
+    // anchor so the BOTTOM of the tag sits just above the name label (name at +0.7*mkSize)
+    d.spotTag.position.y = d.marker.position.y + d.mkSize * 0.95 + h2 * 0.5;
     d.spotTag.visible = true; d.spotMat.opacity = 1;
   }
 
