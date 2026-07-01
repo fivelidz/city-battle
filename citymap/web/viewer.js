@@ -88,6 +88,9 @@
   var map = null, terrainMesh = null, terrainField = null, buildingsGroup = null, roadsGroup = null;
   var unitsGroup = null, overlayGroup = null, wireMesh = null;
   var windGroup = null, rainGroup = null, suburbGroup = null, compassGroup = null, immunityGroup = null;
+  var suburbFillGroup = null;
+  // U1: suburb overlay MODE cycle: 0 none, 1 borders, 2 borders+territory, 3 all, 4 all+names
+  var suburbMode = 1;
   var units = [], selected = null;
   // I1/R3: unit-marker size + on/off. SMALL by default (cycle SMALL -> FULL -> OFF via MARKERS btn).
   var markerScale = 0.6, markersOn = true;
@@ -403,7 +406,7 @@
   }
 
   function clearScene() {
-    [terrainMesh, buildingsGroup, roadsGroup, unitsGroup, overlayGroup, wireMesh, windGroup, rainGroup, suburbGroup, suburbNameGroup, fireGroup,
+    [terrainMesh, buildingsGroup, roadsGroup, unitsGroup, overlayGroup, wireMesh, windGroup, rainGroup, suburbGroup, suburbNameGroup, suburbFillGroup, immunityGroup, fireGroup,
      compassGroup, cmd.flagGroup, cmd.orderGroup, cmd.fxGroup].forEach(function (o) {
       if (o) { scene.remove(o); }
     });
@@ -821,12 +824,22 @@
   // own groups, separate from overlayGroup).
   var suburbMarkers = [];        // [{name, x, z, ring, glowMat, baseCol, objState}]
   var suburbNameGroup = null;    // big name labels (own toggle)
+  // U1: apply the current suburb overlay MODE to the existing groups (no rebuild needed).
+  var SUBURB_MODE_LABEL = ["OFF", "BORDERS", "BORDERS+FILL", "ALL", "ALL+NAMES"];
+  function applySuburbMode() {
+    if (suburbGroup) suburbGroup.visible = suburbMode >= 1;
+    if (suburbFillGroup) suburbFillGroup.visible = suburbMode >= 2;
+    if (suburbNameGroup) suburbNameGroup.visible = suburbMode >= 4;
+    show.suburbs = suburbMode >= 1;                    // keep legacy flag roughly in sync
+    var b = document.getElementById("tSub");
+    if (b) { b.textContent = "SUBURBS: " + SUBURB_MODE_LABEL[suburbMode]; b.classList.toggle("on", suburbMode >= 1); }
+  }
   function buildSuburbs() {
     suburbGroup = new THREE.Group();
-    suburbGroup.visible = show.suburbs;
+    suburbGroup.visible = suburbMode >= 1;             // borders visible from mode 1+
     scene.add(suburbGroup);
     suburbNameGroup = new THREE.Group();
-    suburbNameGroup.visible = show.suburbs && show.subnames;
+    suburbNameGroup.visible = suburbMode >= 4;         // names only in the top mode
     scene.add(suburbNameGroup);
     suburbMarkers = [];
 
@@ -843,6 +856,12 @@
 
     // neon palette: cyan + magenta alternate for an Eva-neon read; objective states override.
     var NEON = [0x35e0d0, 0xe65cc8];
+    // U1: 4-colour territory INFILL palette (only 4 needed to colour any map). Chosen so adjacent
+    // suburbs mostly differ; kept muted so it reads as a light wash, not a solid block.
+    var TERRITORY = [0x2f6f8a, 0x8a5a2f, 0x4a7a45, 0x7a4a70];
+    suburbFillGroup = new THREE.Group();
+    suburbFillGroup.visible = suburbMode >= 2;   // shown in "borders+territory" and "all"
+    scene.add(suburbFillGroup);
 
     var placed = 0;
 
@@ -871,6 +890,18 @@
             return new THREE.Vector3(p.x, p.y + span * 0.001, p.z); }));
           suburbGroup.add(new THREE.Line(geo2, new THREE.LineBasicMaterial({
             color: neonC, transparent: true, opacity: 0.28, depthTest: false })));
+          // U1: territory INFILL — fan-triangulate the ring from its centroid, drape on terrain.
+          var terrCol = TERRITORY[placed % 4];
+          var cxr = 0, czr = 0; pts.forEach(function (p) { cxr += p.x; czr += p.z; }); cxr /= pts.length; czr /= pts.length;
+          var verts = [], cyr = heightAt(clamp(cxr, 0, W), clamp(czr, 0, L)) + 6;
+          for (var pk = 0; pk < pts.length; pk++) {
+            var a = pts[pk], b = pts[(pk + 1) % pts.length];
+            verts.push(cxr, cyr, czr, a.x, a.y - 2, a.z, b.x, b.y - 2, b.z);
+          }
+          var fg = new THREE.BufferGeometry();
+          fg.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+          suburbFillGroup.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({
+            color: terrCol, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })));
           drewRing = true;
         }
         if (!drewRing) continue;
@@ -2063,7 +2094,7 @@
     // The true-scale crab hull is tiny on an 11-32km map; this marker is the clear, clickable icon.
     var span = Math.max(map.size_m[0], map.size_m[1]);
     var mkCol = side === "friend" ? COL.mkFriend : side === "hostile" ? COL.mkHostile : COL.mkCiv;
-    var markerTex = makeUnitMarkerTexture(side, mkCol);
+    var markerTex = makeUnitMarkerTexture(side, mkCol, cls);
     var mkMat = new THREE.SpriteMaterial({ map: markerTex, transparent: true, depthTest: false, depthWrite: false });
     var marker = new THREE.Sprite(mkMat);
     // I1: SMALLER markers, closer to the unit (scaled by markerScale, adjustable/off via view button)
@@ -2145,7 +2176,7 @@
 
   // Canvas sprite for a unit marker: a coloured diamond (friend), chevron/triangle (hostile),
   // or circle (civilian), with a dark outline so it pops on any terrain. Always billboarded.
-  function makeUnitMarkerTexture(side, colInt) {
+  function makeUnitMarkerTexture(side, colInt, cls) {
     var S = 128, cv = document.createElement("canvas"); cv.width = cv.height = S;
     var ctx = cv.getContext("2d");
     var c = "#" + ("000000" + colInt.toString(16)).slice(-6);
@@ -2166,10 +2197,25 @@
       // circle
       ctx.beginPath(); ctx.arc(c2, c2, c2 - m, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
-    // inner highlight dot
-    ctx.shadowBlur = 0; ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.beginPath(); ctx.arc(c2, c2, 7, 0, Math.PI * 2); ctx.fill();
+    // X1: CLASS LETTER inside the icon (R=Recon, L=Line, S=Siege, C=Convoy).
+    var letter = classLetter(cls);
+    if (letter) {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "rgba(10,13,11,0.92)";
+      ctx.font = "bold 52px DejaVu Sans Mono, monospace";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      var ly = side === "hostile" ? c2 + 6 : c2;   // nudge down inside the triangle
+      ctx.fillText(letter, c2, ly);
+    } else {
+      // inner highlight dot (civ / unknown)
+      ctx.shadowBlur = 0; ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.beginPath(); ctx.arc(c2, c2, 7, 0, Math.PI * 2); ctx.fill();
+    }
     var tex = new THREE.CanvasTexture(cv); tex.needsUpdate = true; return tex;
+  }
+  function classLetter(cls) {
+    return cls === "Recon" ? "R" : cls === "Line" ? "L" : cls === "Siege" ? "S"
+         : cls === "Convoy" ? "C" : "";
   }
 
   // I3/I4: a bold outline RING (coloured ring with a dark inner border) for selection / fired-on.
@@ -3085,8 +3131,10 @@
     tog("tLOS", "los"); tog("tRange", "range"); tog("tBld", "bld"); tog("tRoads", "roads"); tog("tWire", "wire");
     document.getElementById("tRoads").classList.toggle("on", show.roads);
     tog("tWind", "wind"); tog("tRain", "rain");
-    tog("tSub", "suburbs"); tog("tFogCull", "fogcull");
-    document.getElementById("tSub").classList.toggle("on", show.suburbs);
+    tog("tFogCull", "fogcull");
+    // U1: SUBURBS button cycles the overlay mode (OFF -> BORDERS -> +FILL -> ALL -> ALL+NAMES)
+    var subB = document.getElementById("tSub");
+    if (subB) { subB.onclick = function () { suburbMode = (suburbMode + 1) % 5; applySuburbMode(); }; applySuburbMode(); }
     document.getElementById("tFogCull").classList.toggle("on", show.fogcull);
     document.getElementById("tFly").onclick = function () { setFly(!fly.on); };
 
@@ -4378,7 +4426,7 @@
       }
     });
     if (d.markerTexHolder) { /* marker tex set below */ }
-    if (d.mkMat) { d.mkMat.map = makeUnitMarkerTexture(side, mk); d.mkMat.map.needsUpdate = true; d.mkMat.opacity = 1; }
+    if (d.mkMat) { d.mkMat.map = makeUnitMarkerTexture(side, mk, cls); d.mkMat.map.needsUpdate = true; d.mkMat.opacity = 1; }
     if (d.labelMat) d.labelMat.opacity = 1;
     // relabel name sprite
     if (d.label && d.label.parent) {
@@ -4453,10 +4501,8 @@
       setFlagship(u[0]);
     }
     // ensure the neon suburb markers are visible so the flagged objective site reads
-    if (!show.suburbs) { show.suburbs = true;
-      if (suburbGroup) suburbGroup.visible = true;
-      var sb = document.getElementById("tSub"); if (sb) sb.classList.add("on");
-    }
+    if (suburbMode < 1) { suburbMode = 1; }   // ensure suburb borders show so objective sites read
+    applySuburbMode();
     selected = units[0]; selectUnit(selected);
     if (QS.get("ulist") === "1") toggleUnitList(true);   // for demos/screenshots
     var sd = document.getElementById("scenSel"); if (sd) sd.value = key;

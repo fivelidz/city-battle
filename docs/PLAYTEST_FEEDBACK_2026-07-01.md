@@ -283,3 +283,10 @@ B1 real suburb borders.
   name, in very small text: a small EYE symbol (👁) followed by the allied unit(s) that currently
   have LOS on it, and a CROSSHAIR symbol (⌖/✛) if an allied unit is firing on it. Small text,
   directly under the enemy's name label. Conveys who has eyes-on and who is engaging.
+
+## X. Unit icon class letter
+
+- **[ ] X1 — Draw the CLASS LETTER inside the unit ICON.** Our units' marker icons (the diamond/
+  triangle billboards) should carry the class-code LETTER as text inside them (e.g. R=Recon,
+  L=Line, S=Siege, C=Convoy — or the RtW-style class code). Bake the letter into makeUnitMarker-
+  Texture so it reads at a glance which class each crab is, right on the map.
