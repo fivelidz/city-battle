@@ -87,7 +87,7 @@
   var scene, camera, renderer, controls, raycaster, mouse;
   var map = null, terrainMesh = null, terrainField = null, buildingsGroup = null, roadsGroup = null;
   var unitsGroup = null, overlayGroup = null, wireMesh = null;
-  var windGroup = null, rainGroup = null, suburbGroup = null, compassGroup = null;
+  var windGroup = null, rainGroup = null, suburbGroup = null, compassGroup = null, immunityGroup = null;
   var units = [], selected = null;
   // I1/R3: unit-marker size + on/off. SMALL by default (cycle SMALL -> FULL -> OFF via MARKERS btn).
   var markerScale = 0.6, markersOn = true;
@@ -107,6 +107,7 @@
                subnames: QS.get("names") === "1",
                fire: false, slope: false, comms: QS.get("comms") === "1",
                deadzones: false, shaderange: QS.get("shadeoutrange") === "1",
+               immunity: QS.get("threat") === "1",   // V2: independent THREAT/immunity band toggle
                netlos: QS.get("netlos") === "1" };
 
   // PREVIEW MODE: "current" (default) | "arrival" — compute range+LOS+dead-zones as if the
@@ -1791,29 +1792,42 @@
     //   inner edge = range beyond which enemy SIDE pen <= our side armour
     //   outer edge = range beyond which enemy TOP (plunging) pen  >  our deck armour
     // The threat gun's reach comes from the THREAT dropdown (immunityThreat), else the enemy on-map.
+    if (show.immunity) drawThreatBand(d, fireGroup);   // (also available via its own toggle)
+  }
+  // V1/V2: THREAT BAND vs the chosen enemy gun. FLIPPED so RED = DANGER: the two ranges where the
+  // threat gun DEFEATS this unit's armour (inner = close, its flat/side pen bites; outer = far, its
+  // plunging/deck pen bites) are shaded red; the clear ring between them is the IMMUNE stand-off.
+  // Rendered into its own group so it can be toggled independently of Fire Analysis.
+  function drawThreatBand(d, grp) {
+    if (!d) return;
+    var span = Math.max(map.size_m[0], map.size_m[1]);
     var er = immunityThreat.rangeM;
     if (!(er > 0)) {
       var enemy = units.filter(function (g) { return g.userData.side === "hostile" && g.userData.rangeM > 0; })[0];
       er = enemy ? enemy.userData.rangeM : 0;
     }
-    if (er > 0) {
-      var innerEdge = er * 0.34, outerEdge = er * 0.82;
-      if (outerEdge > innerEdge) {
-        // BOLD immune band: stronger amber fill + bold edge rings so it clearly reads as its own thing.
-        var g2 = new THREE.RingGeometry(innerEdge, outerEdge, 96, 1);
-        g2.rotateX(-Math.PI / 2);
-        var mband = new THREE.Mesh(g2, new THREE.MeshBasicMaterial({
-          color: 0x3ea0c8, transparent: true, opacity: 0.20, side: THREE.DoubleSide, depthWrite: false }));
-        mband_place(mband, d);
-        fireGroup.add(mband);
-        ring(innerEdge, 0x5fd6e6, 0.95);   // bold cyan inner edge
-        ring(outerEdge, 0x5fd6e6, 0.95);   // bold cyan outer edge
-        // label the band
-        var lbl = makeTagSprite("IMMUNE vs " + (immunityThreat.name || "ENEMY GUN"), 0x5fd6e6, Math.max(map.size_m[0], map.size_m[1]));
-        lbl.position.set(d.x, heightAt(d.x, d.z) + Math.max(120, (outerEdge) * 0.05), d.z + (innerEdge + outerEdge) / 2);
-        lbl.material.depthTest = false; lbl.renderOrder = 25; fireGroup.add(lbl);
-      }
+    if (!(er > 0)) return;
+    var innerEdge = er * 0.34, outerEdge = er * 0.82;
+    var gy = heightAt(d.x, d.z);
+    function disc(r0, r1, col, op) {
+      var g2 = new THREE.RingGeometry(r0, r1, 96, 1); g2.rotateX(-Math.PI / 2);
+      var m = new THREE.Mesh(g2, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false }));
+      m.position.set(d.x, gy + 3, d.z); m.renderOrder = 8; grp.add(m);
     }
+    function edge(r, col, op) {
+      var pts = []; for (var a = 0; a <= 64; a++) { var t = a / 64 * Math.PI * 2; pts.push(new THREE.Vector3(d.x + Math.cos(t) * r, gy + 4, d.z + Math.sin(t) * r)); }
+      var g3 = new THREE.BufferGeometry().setFromPoints(pts);
+      var ln = new THREE.Line(g3, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: op, depthTest: false })); ln.renderOrder = 12; grp.add(ln);
+    }
+    // inner THREAT (0..innerEdge) + outer THREAT (outerEdge..er) in red; immune ring stays clear.
+    disc(0, innerEdge, 0xd83a30, 0.22);
+    disc(outerEdge, er, 0xd83a30, 0.18);
+    edge(innerEdge, 0xff6a5a, 0.95);
+    edge(outerEdge, 0xff6a5a, 0.95);
+    edge(er, 0xd83a30, 0.5);
+    var lbl = makeTagSprite("THREAT vs " + (immunityThreat.name || "ENEMY GUN") + "  (red = can kill you)", 0xff6a5a, span);
+    lbl.position.set(d.x, gy + Math.max(140, er * 0.05), d.z + er * 0.55);
+    lbl.material.depthTest = false; lbl.renderOrder = 25; grp.add(lbl);
   }
   function mband_place(mesh, d) {
     mesh.position.set(d.x, heightAt(d.x, d.z) + 3, d.z);
@@ -2300,6 +2314,13 @@
       // VIEWSHED light-cast: highlight everything this unit can see (current or arrival origin).
       if (show.los) computeViewshed(u); else clearViewshed();
       updateDeadReadout(u);
+    }
+
+    // V2: THREAT / IMMUNITY band — standalone toggle, drawn independent of Fire Analysis.
+    if (immunityGroup) { scene.remove(immunityGroup); immunityGroup = null; }
+    if (show.immunity && !show.fire) {   // (fire analysis already draws it inline when active)
+      immunityGroup = new THREE.Group(); scene.add(immunityGroup);
+      drawThreatBand(d, immunityGroup);
     }
 
     // FOG-CULL LOD: dim/hide buildings outside this unit's sight (recompute on selection change).
@@ -3095,6 +3116,23 @@
       var hid = apList.classList.toggle("hidden");
       apTog.textContent = hid ? "[ show ]" : "[ hide ]";
     };
+
+    // ---- V2: THREAT BAND independent toggle + its own threat-gun dropdown ----
+    var thBtn = document.getElementById("tThreat");
+    if (thBtn) {
+      thBtn.classList.toggle("on", show.immunity);
+      thBtn.onclick = function () { show.immunity = !show.immunity; thBtn.classList.toggle("on", show.immunity); rebuildOverlays(); };
+    }
+    var ths2 = document.getElementById("threatSel2");
+    if (ths2 && !ths2._built) {
+      ths2._built = true;
+      THREAT_GUNS.forEach(function (tg, i) { var o = document.createElement("option"); o.value = i; o.textContent = tg.name; ths2.appendChild(o); });
+      ths2.onchange = function () {
+        immunityThreat = THREAT_GUNS[parseInt(ths2.value, 10)] || THREAT_GUNS[0];
+        var t1 = document.getElementById("threatSel"); if (t1) t1.value = ths2.value;   // keep both in sync
+        rebuildOverlays();
+      };
+    }
 
     // ---- UNIT LIST close button ----
     var ulc = document.getElementById("ulistClose");
