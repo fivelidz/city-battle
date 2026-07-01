@@ -153,6 +153,24 @@
   #firesol .fsgrid .dim{font-size:8.5px;letter-spacing:.06em}
   #firesol .fsgrid span:last-child{color:var(--ink);font-weight:bold}
   #firesol .hdr .dim{color:var(--teal)}
+  /* auto-pause checklist */
+  #apList{margin-top:3px}
+  #apList.hidden{display:none}
+  .apc{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim);line-height:1.9;cursor:pointer}
+  .apc input{accent-color:var(--amber);width:12px;height:12px;margin:0}
+  /* lingering EVENT POPUPS (centre-top, fade out) */
+  #events{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:15;
+    display:flex;flex-direction:column;align-items:center;gap:5px;pointer-events:none;width:auto}
+  #events .ev{background:rgba(13,17,16,.9);border:1px solid var(--hair);padding:5px 14px;
+    font-size:12px;letter-spacing:.06em;color:var(--ink);white-space:nowrap;
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%);
+    animation:evfade 3.2s ease-out forwards}
+  #events .ev.warn{border-color:var(--red);color:#f0b6b0}
+  #events .ev.good{border-color:#7fe6a0;color:#bfeccd}
+  #events .ev.hit{border-color:var(--amber);color:#e9cf9a}
+  #events .ev .a{color:var(--teal)} #events .ev .h{color:var(--red)}
+  @keyframes evfade{0%{opacity:0;transform:translateY(-6px)}10%{opacity:1;transform:translateY(0)}
+    75%{opacity:1}100%{opacity:0;transform:translateY(-4px)}}
   /* SPEED + SOUND control row (bottom-centre, command mode) */
   #simctl{position:fixed;bottom:48px;left:50%;transform:translateX(-50%);z-index:6;display:none;
     gap:5px;align-items:center;flex-direction:row}
@@ -164,6 +182,7 @@
 <body>
 <canvas id="c"></canvas>
 <div id="scan"></div>
+<div id="events"></div>
 
 <!-- HUD compass rose: fixed N-up dial; the needle shows which way the camera looks vs true north -->
 <div id="compassHud" title="Camera heading vs TRUE north">
@@ -316,6 +335,18 @@
   <div class="row"><span class="dim">SIM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <span id="cSim" class="warn">PAUSED</span></div>
   <div class="cmdrow">
     <button class="btn" id="playBtn" style="flex:1">&#9654; PLAY</button>
+  </div>
+  <div class="hdr" style="margin-top:8px;font-size:10px">Auto-Pause On
+    <span class="info" tabindex="0">i<span class="tip">The clock auto-pauses when a ticked event happens, so you can react. SPACE resumes.</span></span>
+    <span id="apToggle" class="tw" style="font-size:9px;color:var(--dim);letter-spacing:.08em;float:right;cursor:pointer">[ hide ]</span>
+  </div>
+  <div id="apList">
+    <label class="apc"><input type="checkbox" id="apSighted" checked> first enemy sighted</label>
+    <label class="apc"><input type="checkbox" id="apFiredOn" checked> fired on by enemy</label>
+    <label class="apc"><input type="checkbox" id="apFiredAt"> we open fire</label>
+    <label class="apc"><input type="checkbox" id="apHitEnemy"> we hit an enemy</label>
+    <label class="apc"><input type="checkbox" id="apKO" checked> a unit is knocked out</label>
+    <label class="apc"><input type="checkbox" id="apHitAlly" checked> friendly fire (hit ally)</label>
   </div>
   <div class="hdr" style="margin-top:9px">Order Type</div>
   <div class="cmdrow" id="ftRow">

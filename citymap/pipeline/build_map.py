@@ -199,8 +199,26 @@ def main():
             print(f"[build_map] weather present but failed to embed: {e}")
     else:
         print("[build_map] no weather cache; map without weather field")
+
+    # COMPACT the payload for fast web loading: integer metre coords everywhere (1 m precision is
+    # plenty on a multi-km map) + no-whitespace separators. Cuts the file ~35% with no visible loss.
+    def ri(v):
+        return int(round(v))
+
+    out["terrain"]["heights"] = [ri(h) for h in out["terrain"]["heights"]]
+    for b in out["buildings"]:
+        if "poly" in b:
+            b["poly"] = [[ri(x), ri(z)] for x, z in b["poly"]]
+    for r in out["roads"]:
+        if "path" in r:
+            r["path"] = [[ri(x), ri(z)] for x, z in r["path"]]
+    for s in out.get("suburbs", []):
+        s["rings"] = [[[ri(x), ri(z)] for x, z in ring] for ring in s["rings"]]
+        if "centroid" in s:
+            s["centroid"] = [ri(s["centroid"][0]), ri(s["centroid"][1])]
+
     out_fn = os.path.join(DATA, f"{city}.citymap.json")
-    json.dump(out, open(out_fn, "w"))
+    json.dump(out, open(out_fn, "w"), separators=(",", ":"))
     sz = os.path.getsize(out_fn)
     print(f"[build_map] {out_fn}  ({sz // 1024} KB)")
     print(

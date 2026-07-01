@@ -160,6 +160,20 @@
   LOS communications; destroying them collapses that part of the net. (Extends the comms-mast /
   relay-drone concept already in the Unity sim to fixed, destructible map structures.)
 
+- **[L] N2 — SPOTTER EMCON (fire discipline).** In the TUTORIAL, cover the choice to hold a
+  spotter's / observer's fire so it is NOT discovered: a unit that fires reveals its position (muzzle
+  flash / RDF), so a forward observer that stays silent keeps directing indirect fire without giving
+  itself away. Tie to a per-unit HOLD-FIRE / OBSERVE-ONLY posture (spot for others, never shoot).
+  Doctrine: emission control (EMCON) + counter-battery. (Now that indirect fire needs a spotter — O1 —
+  this is the natural next layer: spotters are valuable and must survive by staying hidden.)
+
+- **[L] N3 — FLAGSHIP RISK: break radio silence to command out-of-range units.** Ordering a unit
+  that is OUTSIDE the flagship's default comms range should be possible but RISKY — it forces the
+  flagship to broadcast (break EMCON), which can reveal / RDF-locate the flagship's position. Show a
+  clear WARNING/confirm before issuing such an order ("BREAK RADIO SILENCE? — reveals flagship
+  position"). Models the real tension between command reach and staying hidden. Pairs with N2/comms
+  net + the RDF locate mechanic already in the Unity sim.
+
 ---
 
 ## O. Known engine gaps (recorded from prior analysis — still outstanding, web demo)

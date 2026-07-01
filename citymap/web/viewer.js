@@ -178,6 +178,9 @@
     selectedSet: [], objective: null, flagGroup: null, orderGroup: null, fxGroup: null,
     forceScenario: QS.get("scenario") || "", forcePlay: QS.get("play") === "1",
     netStat: "", flagshipOffNet: false, fireTarget: null,
+    // auto-pause: which combat events halt the clock so the player can react (checklist in the panel)
+    autoPause: { sighted: true, firedOn: true, firedAt: false, hitEnemy: false, ko: true, hitAlly: true },
+    _sighted: false,   // whether first-contact has fired this battle
     // objective resolution: win/lose tracking for the active scenario (mirrors the Unity
     // ObjectiveSystem). holdTimer accrues while the crest is held uncontested; outcome flips
     // to "win"/"lose" and freezes the sim with a banner.
@@ -203,6 +206,31 @@
     clogFull.push(line);
     if (clogFull.length > CLOG_FULL_MAX) clogFull.shift();
     renderClog();
+  }
+  // A significant COMBAT EVENT: log it, flash a lingering on-screen popup, and (if the matching
+  // auto-pause box is ticked) halt the clock so the player can react. type keys match cmd.autoPause.
+  function combatEvent(type, html, kind) {
+    combatLog(html, kind);
+    showEvent(html, kind);
+    if (cmd.on && cmd.playing && cmd.autoPause && cmd.autoPause[type]) {
+      setPlaying(false);
+      showEvent('<span class="a">\u23F8 AUTO-PAUSED</span> \u2014 ' + eventLabel(type) + ' (SPACE to resume)', "warn");
+    }
+  }
+  function eventLabel(t) {
+    return { sighted: "enemy sighted", firedOn: "under fire", firedAt: "we opened fire",
+             hitEnemy: "hit an enemy", ko: "unit knocked out", hitAlly: "FRIENDLY FIRE" }[t] || t;
+  }
+  // Show a brief lingering popup (auto-fades via CSS animation, then removes itself).
+  function showEvent(html, kind) {
+    var host = document.getElementById("events"); if (!host) return;
+    var el = document.createElement("div");
+    el.className = "ev " + (kind || "");
+    el.innerHTML = html;
+    host.appendChild(el);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 3300);
+    // cap on-screen popups
+    while (host.children.length > 5) host.removeChild(host.firstChild);
   }
   // Render both the MINI panel (recent, decaying) and the FULL scrollable panel (if open).
   function renderClog() {
@@ -318,15 +346,59 @@
   }
 
   // ---------- load + build ----------
+  // Streams the citymap JSON with a live progress readout (the file is a few MB, so on a slow
+  // connection we show download progress + a build phase instead of a blank/frozen screen).
+  function setLoad(msg) {
+    var el = document.getElementById("load"); if (!el) return;
+    el.style.display = "flex"; el.textContent = msg;
+  }
   function loadCity(key) {
-    document.getElementById("load").style.display = "flex";
+    setLoad("LOADING " + key.toUpperCase() + "\u2026");
     document.getElementById("status").textContent = "LOADING " + key.toUpperCase();
-    fetch("../data/" + key + ".citymap.json")
-      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (j) { map = j; buildScene(); document.getElementById("load").style.display = "none"; })
-      .catch(function (e) {
-        document.getElementById("load").textContent = "MAP NOT FOUND: " + key + " (" + e + ")";
-      });
+    var url = "../data/" + key + ".citymap.json";
+    fetchWithProgress(url, function (frac, mb) {
+      setLoad("LOADING " + key.toUpperCase() + "  " + (frac ? Math.round(frac * 100) + "%" : mb.toFixed(1) + " MB"));
+    }).then(function (text) {
+      setLoad("BUILDING TERRAIN\u2026");
+      // defer one frame so the "BUILDING" message paints before the heavy build blocks the thread
+      setTimeout(function () {
+        try {
+          map = JSON.parse(text);
+          buildScene();
+          document.getElementById("load").style.display = "none";
+        } catch (e) {
+          setLoad("MAP BUILD FAILED: " + e);
+        }
+      }, 30);
+    }).catch(function (e) {
+      setLoad("MAP FAILED TO LOAD (" + e + ") \u2014 tap/refresh to retry");
+      // one automatic retry after a short delay for transient network hiccups
+      if (!loadCity._retried) { loadCity._retried = true; setTimeout(function () { loadCity(key); }, 2500); }
+    });
+  }
+  // Fetch with a streamed progress callback + a hard timeout. Resolves to the response text.
+  function fetchWithProgress(url, onProgress) {
+    var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 45000);  // 45s hard cap
+    return fetch(url, ctrl ? { signal: ctrl.signal } : undefined).then(function (r) {
+      if (!r.ok) { clearTimeout(timer); throw new Error("HTTP " + r.status); }
+      var total = parseInt(r.headers.get("content-length") || "0", 10);
+      if (!r.body || !r.body.getReader) { clearTimeout(timer); return r.text(); }   // no-stream fallback
+      var reader = r.body.getReader(), received = 0, chunks = [];
+      return (function pump() {
+        return reader.read().then(function (res) {
+          if (res.done) {
+            clearTimeout(timer);
+            var buf = new Uint8Array(received), off = 0;
+            chunks.forEach(function (c) { buf.set(c, off); off += c.length; });
+            return new TextDecoder("utf-8").decode(buf);
+          }
+          chunks.push(res.value); received += res.value.length;
+          onProgress(total ? received / total : 0, received / 1048576);
+          return pump();
+        });
+      })();
+    });
   }
 
   function clearScene() {
@@ -2861,6 +2933,20 @@
       };
     }
 
+    // ---- AUTO-PAUSE checklist: bind each box to cmd.autoPause; a header link hides the list ----
+    var apMap = { apSighted: "sighted", apFiredOn: "firedOn", apFiredAt: "firedAt",
+                  apHitEnemy: "hitEnemy", apKO: "ko", apHitAlly: "hitAlly" };
+    Object.keys(apMap).forEach(function (id) {
+      var cb = document.getElementById(id); if (!cb) return;
+      cb.checked = !!cmd.autoPause[apMap[id]];
+      cb.onchange = function () { cmd.autoPause[apMap[id]] = cb.checked; };
+    });
+    var apTog = document.getElementById("apToggle"), apList = document.getElementById("apList");
+    if (apTog && apList) apTog.onclick = function () {
+      var hid = apList.classList.toggle("hidden");
+      apTog.textContent = hid ? "[ show ]" : "[ hide ]";
+    };
+
     // ---- COMBAT VIEW (L1) toggle ----
     var povBtn = document.getElementById("tPov");
     if (povBtn) {
@@ -3837,6 +3923,12 @@
       if (!sol) return;                                  // masked / no arc reaches / no spotter
       if (dist < bestD) { bestD = dist; target = e; bestSol = sol; }
     });
+    // FIRST ENEMY SIGHTED — the moment any friendly first acquires a hostile in range+solution.
+    if (target && d.side === "friend" && target.userData.side === "hostile" && !cmd._sighted) {
+      cmd._sighted = true;
+      combatEvent("sighted", '<span class="a">CONTACT</span> \u2014 <span class="h">' +
+                  target.userData.name + '</span> sighted by ' + d.name, "warn");
+    }
     if (target && !holdFire) {
       c.fireSol = bestSol;                               // remember trajectory used (for arcs/log)
       var firstShot = (c.firingTo !== target);
@@ -3861,16 +3953,22 @@
         var tgtCls = target.userData.side === "friend" ? "a" : "h";
         var trajTxt = c.fireSol ? (c.fireSol.mode === "direct" ? "DIRECT" : c.fireSol.mode === "indirect" ? "INDIRECT" : "HIGH-ANGLE") : "";
         if (firstShot) {
-          combatLog('<span class="' + shooterCls + '">' + d.name + '</span> engages <span class="' +
-                    tgtCls + '">' + target.userData.name + '</span> <span class="dim">[' + gun + (trajTxt ? " \u00B7 " + trajTxt : "") + ']</span>',
-                    d.side === "friend" ? "friend" : "");
+          var engHtml = '<span class="' + shooterCls + '">' + d.name + '</span> engages <span class="' +
+                    tgtCls + '">' + target.userData.name + '</span> <span class="dim">[' + gun + (trajTxt ? " \u00B7 " + trajTxt : "") + ']</span>';
+          // event: WE open fire (friendly shooter) vs FIRED ON by enemy (hostile shooter)
+          if (d.side === "friend") combatEvent("firedAt", engHtml, "friend");
+          else combatEvent("firedOn", engHtml, "warn");
         } else if (Math.floor(before / 20) !== Math.floor(td.struct / 20)) {
           // K1/K2: log WHO hit WHAT with WHICH gun; for FRIENDLY fire record the impact ZONE.
           var zone = hitZone(bestD, d.rangeM);       // SIDE / DECK / GLACIS from range (angle of fall)
           var zoneTxt = d.side === "friend" ? ' <span class="dim">on ' + zone + '</span>' : '';
-          combatLog('<span class="' + shooterCls + '">' + d.name + '</span> hits <span class="' + tgtCls +
+          var hitHtml = '<span class="' + shooterCls + '">' + d.name + '</span> hits <span class="' + tgtCls +
                     '">' + target.userData.name + '</span> <span class="dim">[' + gun + ']</span>' + zoneTxt +
-                    ' &middot; struct ' + Math.max(0, Math.round(td.struct)) + '%', "hit");
+                    ' &middot; struct ' + Math.max(0, Math.round(td.struct)) + '%';
+          // event: friendly-fire (ally hit ally) is the loud one; else "we hit an enemy"
+          if (d.side === "friend" && target.userData.side === "friend") combatEvent("hitAlly", "\u26A0 FRIENDLY FIRE \u2014 " + hitHtml, "warn");
+          else if (d.side === "friend") combatEvent("hitEnemy", hitHtml, "hit");
+          else combatLog(hitHtml, "hit");
         }
       }
       if (td.struct <= 0) { td.struct = 0; knockOut(target); }
@@ -3897,7 +3995,7 @@
   function knockOut(g) {
     var c = g.userData.cmd; if (c.ko) return;
     c.ko = true; c.firingTo = null;
-    combatLog('<span class="h">' + g.userData.name + '</span> KNOCKED OUT', "ko");
+    combatEvent("ko", '<span class="h">' + g.userData.name + '</span> KNOCKED OUT', "warn");
     if (!cmd._warmup) playSfx("impact");
     if (c.fireLine) { cmd.fxGroup.remove(c.fireLine); c.fireLine = null; }
     // grey the unit out
@@ -4109,7 +4207,7 @@
     clearSuburbObjectives();
     units.forEach(function (g) { clearOrders(g); });
     // reset objective resolution for the new scenario
-    cmd.objHold = 0; cmd.outcome = ""; hideObjectiveBanner();
+    cmd.objHold = 0; cmd.outcome = ""; cmd._sighted = false; hideObjectiveBanner();
     cmd.objWin = key === "harbour_crossing" ? "hold"
               : key === "ridge_defence"    ? "eliminate"
               : key === "convoy_escort"    ? "escort" : "";
