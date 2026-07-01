@@ -2783,6 +2783,13 @@
     document.getElementById("tFogCull").classList.toggle("on", show.fogcull);
     document.getElementById("tFly").onclick = function () { setFly(!fly.on); };
 
+    // ---- COMBAT VIEW (L1) toggle ----
+    var povBtn = document.getElementById("tPov");
+    if (povBtn) {
+      povBtn.classList.toggle("on", povOn);
+      povBtn.onclick = function () { povOn = !povOn; povBtn.classList.toggle("on", povOn); };
+    }
+
     // ---- MARKERS view button: cycle FULL -> SMALL -> OFF (I1) ----
     var mkBtn = document.getElementById("tMarkers");
     if (mkBtn) {
@@ -4170,6 +4177,62 @@
       pos.needsUpdate = true;
     }
     renderer.render(scene, camera);
+    renderCombatPOV();      // L1: picture-in-picture down the firing unit's LOS to its target
+  }
+
+  // ---------- L1: COMBAT POV VIEWER ----------
+  // A small inset that looks from a firing crab down its line of sight to the target it's engaging.
+  // Prefers the SELECTED unit's target; else any active friendly engagement. Toggle with the
+  // COMBAT VIEW button; auto-hides when nothing is firing.
+  var povCamera = null, povOn = true;
+  function pickPovPair() {
+    // selected friendly firing?
+    if (selected && selected.userData.cmd && selected.userData.cmd.firingTo &&
+        !selected.userData.cmd.firingTo.userData.cmd.ko)
+      return { from: selected.userData, to: selected.userData.cmd.firingTo.userData };
+    // else first friendly engagement, else any engagement
+    for (var pass = 0; pass < 2; pass++) {
+      for (var i = 0; i < units.length; i++) {
+        var d = units[i].userData, c = d.cmd;
+        if (!c || c.ko || !c.firingTo || c.firingTo.userData.cmd.ko) continue;
+        if (pass === 0 && d.side !== "friend") continue;
+        return { from: d, to: c.firingTo.userData };
+      }
+    }
+    return null;
+  }
+  function renderCombatPOV() {
+    var host = document.getElementById("povView");
+    if (!cmd.on || !povOn) { if (host) host.style.display = "none"; return; }
+    var pair = pickPovPair();
+    if (!pair) { if (host) host.style.display = "none"; return; }
+    if (host) host.style.display = "block";
+    if (!povCamera) povCamera = new THREE.PerspectiveCamera(35, 1.6, 1, Math.max(map.size_m[0], map.size_m[1]) * 3);
+    var f = pair.from, t = pair.to;
+    // eye just above/behind the gun, looking at the target
+    var eye = new THREE.Vector3(f.x, f.eye + 14, f.z);
+    var tgt = new THREE.Vector3(t.x, t.eye + 4, t.z);
+    // pull back slightly behind the gun along the reverse LOS so we see our own muzzle
+    var dir = new THREE.Vector3().subVectors(tgt, eye).normalize();
+    eye.addScaledVector(dir, -70);
+    povCamera.position.copy(eye);
+    povCamera.lookAt(tgt);
+    // viewport rectangle (bottom-right, above the conditions panel), in device pixels
+    var W = renderer.domElement.clientWidth, H = renderer.domElement.clientHeight;
+    var pw = Math.min(320, W * 0.24), ph = pw / 1.6;
+    var px = W - pw - 14, py = 150;   // from bottom-left origin of the GL viewport
+    // size the DOM frame to match
+    host.style.width = pw + "px"; host.style.height = ph + "px";
+    var pr = renderer.getPixelRatio();
+    renderer.setScissorTest(true);
+    renderer.setViewport(px * pr, py * pr, pw * pr, ph * pr);
+    renderer.setScissor(px * pr, py * pr, pw * pr, ph * pr);
+    povCamera.aspect = pw / ph; povCamera.updateProjectionMatrix();
+    renderer.render(scene, povCamera);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, W * pr, H * pr);
+    var lbl = document.getElementById("povLabel");
+    if (lbl) lbl.textContent = f.name + " \u2192 " + t.name;
   }
 
   init();
