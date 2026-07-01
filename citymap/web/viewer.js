@@ -95,6 +95,7 @@
   // I1/R3: unit-marker size + on/off. SMALL by default (cycle SMALL -> FULL -> OFF via MARKERS btn).
   var markerScale = 0.6, markersOn = true;
   var namesOn = true;   // AC5: unit name labels on/off
+  var statusBarsOn = true;   // AS2: under-unit HP/ammo bars on/off
   var nameLabelScale = 1.0;  // AH1: name label size multiplier
   var arcsOn = true;    // AB2 option: show fire trajectory arcs
   // G2: threat gun for the immunity-band calc (name + max reach). "AUTO" uses the enemy on-map.
@@ -1908,6 +1909,8 @@
         if (dd < best) { best = dd; target = units[i]; }
       }
     }
+    var ftEl = document.getElementById("fTarget");   // AS3: name the target the analysis is for
+    if (ftEl) ftEl.textContent = (target && target !== u) ? target.userData.name : "\u2014";
     var aofEl = document.getElementById("fAof"), noteEl = document.getElementById("fAofNote");
     if (target && target !== u) {
       var a = angleOfFall(u, target);
@@ -2272,28 +2275,37 @@
     ctx.fill(); ctx.stroke();
     var t = new THREE.CanvasTexture(cv); t.needsUpdate = true; return t;
   }
-  // I5: draw the ammo bar + status glyph strip for a unit (cached by a key to avoid re-drawing).
+  // AS2: under-unit STATUS strip — TWO thin labelled bars (HP teal, AMMO amber) so it's clear which
+  // is which, + a KO/FIRE glyph. Toggleable via statusBarsOn (STATUS BARS view button).
   function updateStatusSprite(g) {
     var d = g.userData, c = d.cmd; if (!d.statMat) return;
+    if (!statusBarsOn || !markersOn) { d.statusSprite.visible = false; return; }
+    var hp = c ? clamp((c.struct != null ? c.struct : 100) / 100, 0, 1) : 1;
     var ammo = c && c.ammoMax ? clamp(c.ammo / c.ammoMax, 0, 1) : 1;
     var st = c && c.ko ? "KO" : (c && c.onFire ? "FIRE" : "");
-    var key = (ammo * 100 | 0) + "|" + st;
+    var key = (hp * 100 | 0) + "|" + (ammo * 100 | 0) + "|" + st;
     if (d._statusKey === key) return; d._statusKey = key;
-    var W = 128, H = 40, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    var W = 140, H = 54, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
     var ctx = cv.getContext("2d");
-    // ammo bar
-    ctx.fillStyle = "rgba(10,14,12,0.85)"; ctx.fillRect(6, 22, 116, 12);
-    ctx.fillStyle = ammo > 0.3 ? "#c8a24a" : "#d75a52"; ctx.fillRect(7, 23, 114 * ammo, 10);
-    ctx.strokeStyle = "rgba(160,180,170,0.5)"; ctx.lineWidth = 1; ctx.strokeRect(6, 22, 116, 12);
-    // status glyph
+    ctx.font = "10px DejaVu Sans Mono, monospace"; ctx.textBaseline = "middle";
+    function bar(y, frac, col, lab) {
+      ctx.fillStyle = "rgba(10,14,12,0.85)"; ctx.fillRect(30, y, 104, 9);
+      ctx.fillStyle = col; ctx.fillRect(31, y + 1, 102 * frac, 7);
+      ctx.strokeStyle = "rgba(160,180,170,0.5)"; ctx.lineWidth = 1; ctx.strokeRect(30, y, 104, 9);
+      ctx.fillStyle = "rgba(200,220,210,0.85)"; ctx.textAlign = "right"; ctx.fillText(lab, 27, y + 5);
+    }
+    bar(4,  hp,   hp > 0.3 ? "#57c7bd" : "#d75a52", "HP");        // health = teal
+    bar(18, ammo, ammo > 0.3 ? "#c8a24a" : "#d75a52", "AM");      // ammo = amber
     if (st) {
-      ctx.font = "bold 20px DejaVu Sans Mono, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillStyle = st === "KO" ? "#9a3a33" : "#e8802c";
-      ctx.fillText(st === "KO" ? "\u2716 KO" : "\u25B2 FIRE", W / 2, 11);
+      ctx.font = "bold 16px DejaVu Sans Mono, monospace"; ctx.textAlign = "center";
+      ctx.fillStyle = st === "KO" ? "#d75a52" : "#e8802c";
+      ctx.fillText(st === "KO" ? "\u2716 KO" : "\u25B2 FIRE", W / 2, 42);
     }
     if (d.statMat.map) d.statMat.map.dispose();
     d.statMat.map = new THREE.CanvasTexture(cv); d.statMat.map.needsUpdate = true;
-    d.statusSprite.visible = markersOn;
+    // keep aspect so the two bars read clearly
+    d.statusSprite.scale.set(d.mkSize * 1.5, d.mkSize * 1.5 * (H / W), 1);
+    d.statusSprite.visible = true;
   }
   // W1: draw the "spotted-by" tag under an enemy — eye count (friendlies with LOS) + crosshair
   // count (friendlies firing on it). Hidden for un-spotted enemies and for friendlies/civs.
@@ -3168,7 +3180,7 @@
     var ident = d.side === "hostile" ? "HOSTILE (uncertain)" : d.side === "civ" ? "CIVILIAN" : "FRIENDLY";
     var ie = document.getElementById("uIdent"); ie.textContent = ident;
     ie.className = d.side === "hostile" ? "warn" : "k";
-    document.getElementById("uStruct").style.width = (d.cmd ? Math.round(d.cmd.struct) : 100) + "%";
+    updateUnitBars(g);   // AS1: struct + ammo bars/readouts
     renderArmament(d);
     document.getElementById("uRange").textContent = d.rangeM ? (d.rangeM / 1000).toFixed(1) + " km" : "n/a";
     document.getElementById("uNote").textContent = d.note;
@@ -3347,6 +3359,13 @@
         units.forEach(function (g) { if (g.userData.label) g.userData.label.visible = namesOn && markersOn; });
       };
     }
+    // ---- AS2: STATUS BARS (under-unit HP/ammo) toggle ----
+    var sbBtn = document.getElementById("tStatusBars");
+    if (sbBtn) sbBtn.onclick = function () {
+      statusBarsOn = !statusBarsOn; sbBtn.classList.toggle("on", statusBarsOn);
+      units.forEach(function (g) { if (g.userData.statusSprite) { g.userData._statusKey = ""; updateStatusSprite(g); } });
+    };
+
     // ---- AH1: unit name-label SIZE slider ----
     var nameSize = document.getElementById("nameSize");
     if (nameSize) nameSize.oninput = function () {
@@ -4611,10 +4630,17 @@
   }
 
   function updateStructBar(g) {
-    if (selected === g) {
-      var bar = document.getElementById("uStruct");
-      if (bar) bar.style.width = Math.round(g.userData.cmd.struct) + "%";
-    }
+    if (selected === g) updateUnitBars(g);
+  }
+  // AS1: struct (health) + AMMO readouts/bars in the unit panel.
+  function updateUnitBars(g) {
+    var c = g.userData.cmd || {};
+    var sb = document.getElementById("uStruct"); if (sb) sb.style.width = Math.round(c.struct != null ? c.struct : 100) + "%";
+    var sp = document.getElementById("uStructPct"); if (sp) sp.textContent = Math.round(c.struct != null ? c.struct : 100) + "%";
+    var ammoFrac = c.ammoMax ? clamp(c.ammo / c.ammoMax, 0, 1) : 1;
+    var ab = document.getElementById("uAmmo"); if (ab) ab.style.width = Math.round(ammoFrac * 100) + "%";
+    var ap = document.getElementById("uAmmoPct");
+    if (ap) ap.textContent = c.ammoMax ? (Math.round(c.ammo) + " / " + c.ammoMax) : "n/a";
   }
 
   // Animated firing lines (tracer dashes) between firing pairs.
@@ -4972,7 +4998,7 @@
 
     // decay the mini combat log over real time (re-render ~4x/sec even with no new lines)
     _clogDecayT = (_clogDecayT || 0) + dt;
-    if (cmd.on && _clogDecayT > 0.25) { _clogDecayT = 0; renderClog(); if (unitListOpen) renderUnitList(); if (selected) { updateUnitOrders(selected); renderContactList(selected); } }
+    if (cmd.on && _clogDecayT > 0.25) { _clogDecayT = 0; renderClog(); if (unitListOpen) renderUnitList(); if (selected) { updateUnitOrders(selected); renderContactList(selected); updateUnitBars(selected); } }
 
     // I4/I5: per-frame marker upkeep — fired-on red ring + ammo/status strip.
     if (cmd.on) {

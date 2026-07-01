@@ -441,3 +441,16 @@ B1 real suburb borders.
 - **[ ] AR1 — Remove the #ctrls panel** (the +/−/RESET buttons bottom-right). Purpose unclear; delete.
 
 ## Status: after these, the barebones demo is READY.
+
+---
+
+# Round 7 feedback — 2026-07-01 (session 6)
+
+## AS. Ammo / status bars
+
+- **[ ] AS1 — Show AMMO amount in the unit PANEL** (numeric + bar).
+- **[ ] AS2 — Under-unit bar is UNCLEAR** — people read it as health, but it's ammo. Fix by: show
+  BOTH a health bar and an ammo bar under the unit (smaller), clearly distinct, AND make this
+  under-unit status view TOGGLEABLE.
+- **[ ] AS3 — Fire-analysis panel should NAME the unit it is targeting** (which enemy the solution
+  is for).

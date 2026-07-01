@@ -57,6 +57,8 @@
     box-shadow:0 2px 12px rgba(0,0,0,.5)}
   .bar{height:5px;background:rgba(80,90,85,.22);margin:3px 0 7px;position:relative}
   .bar>i{position:absolute;inset:0 auto 0 0;background:var(--teal)}
+  /* AS1: ammo bar is AMBER (distinct from the teal struct/health bar) */
+  .bar.ammo>i{background:var(--amber)}
   #scan{position:fixed;inset:0;pointer-events:none;z-index:4;opacity:.045;
     background:repeating-linear-gradient(0deg,transparent 0 2px,#000 3px)}
   .hint{position:fixed;bottom:14px;left:300px;right:230px;font-size:10px;color:var(--dim);text-align:center;line-height:1.7;letter-spacing:.04em;pointer-events:none}
@@ -364,6 +366,7 @@
     <button class="btn on" id="tMarkers" title="Unit markers: FULL / SMALL / OFF">MARKERS: FULL</button>
     <button class="btn on" id="tNames" title="Show/hide unit name labels">UNIT NAMES</button>
     <input type="range" id="nameSize" min="0.5" max="2" step="0.1" value="1" title="Name label size" style="width:100%">
+    <button class="btn on" id="tStatusBars" title="Under-unit HP + ammo bars">STATUS BARS</button>
 
     <button class="btn" id="tThreat" title="Threat band vs an expected enemy gun (red = can kill you)">THREAT BAND</button>
     <select id="threatSel2" style="margin-top:3px;font-size:10px"></select>
@@ -425,6 +428,7 @@
 <div class="panel" id="fire" style="top:42px;left:235px;width:212px;display:none">
   <div class="hdr">Fire Analysis</div>
   <div class="row"><span class="dim">UNIT&nbsp;</span> <span id="fUnit" class="k">--</span></div>
+  <div class="row"><span class="dim">TARGET</span> <span id="fTarget" class="warn">--</span></div>
   <div class="row"><span class="dim">TRAJ&nbsp;</span> <span id="fMode" class="k">DIRECT</span></div>
   <div class="row"><span class="dim">REACH</span> <span id="fReach">--</span></div>
   <div class="row dim" style="margin-top:5px">DEAD SPACE (of in-range terrain)</div>
@@ -514,7 +518,10 @@
       <div class="row"><span class="dim">IDENT</span> <span id="uIdent"></span></div>
     </div>
   </div>
-  <div class="row dim" style="margin-top:5px">STRUCT</div><div class="bar"><i id="uStruct"></i></div>
+  <div class="row"><span class="dim">STRUCT</span> <span id="uStructPct" class="k" style="float:right">100%</span></div>
+  <div class="bar"><i id="uStruct"></i></div>
+  <div class="row" style="margin-top:3px"><span class="dim">AMMO</span> <span id="uAmmoPct" class="k" style="float:right">— / —</span></div>
+  <div class="bar ammo"><i id="uAmmo"></i></div>
   <div class="hdr" style="margin-top:7px;font-size:10px">Armament</div>
   <div id="uArm"></div>
   <div class="row"><span class="dim">RANGE</span> <span id="uRange"></span></div>
