@@ -340,3 +340,62 @@ B1 real suburb borders.
 - **[ ] AD3 — Base GAME speed should be SLOWER by default** (more tactical / time to think). Add a
   slow preset and make the default start slower. (Only the CAMERA fly speed was meant to be faster —
   AD1 — the sim itself should be slow.)
+
+---
+
+# Round 5 feedback — 2026-07-01 (session 4) — "barebones demo ready" push
+
+## AE. Camera
+
+- **[ ] AE1 — A/D fly strafe INVERTED again.** Fix strafe direction.
+- **[ ] AE2 — Camera should ZOOM to a unit's position on the map, close to it** (proper focus/zoom
+  on the selected unit, not just recenter far out).
+
+## AF. Fire / LOS accuracy (IMPORTANT)
+
+- **[ ] AF1 — Gun range rings confusing / seem inaccurate:** the INDIRECT fire overlay does not
+  reach the gun's stated max-range radius. Reconcile: indirect/high-angle reach vs the drawn range
+  ring must agree (or clearly label which ring is which trajectory).
+- **[ ] AF2 — Impossible/blocked shots are being attempted/made.** Units appear to fire on enemies
+  they shouldn't be able to hit (blocked by terrain / no LOS / out of a valid trajectory). The
+  engagement solution check (canHit/spotter) is letting through shots that should be blocked. AUDIT
+  and tighten engagementSolution so only genuinely reachable shots fire.
+
+## AG. Spotted / targeted display on enemies (redo)
+
+- **[ ] AG1 — Fix the sighted/targeted display on enemy units.** In small text under the enemy,
+  show the ACTUAL unit names engaging, with the 👁 (seeing) and ✛ (firing) emojis.
+- **[ ] AG2 — Distinguish states:** a unit may SEE the enemy but not be engaging; OR the enemy's
+  position may be known over COMMS (revealed) while the unit lacks direct LOS. Show seeing-not-firing
+  vs firing vs comms-revealed-without-LOS distinctly.
+
+## AH. Unit name label size
+
+- **[ ] AH1 — Unit name label size adjustable via a SLIDER** (in/near the names button).
+
+## AI. Mission / demo
+
+- **[ ] AI1 — Demo mission no longer finishes** (doesn't end on enemy destroyed). Fix win detection.
+- **[ ] AI2 — NEW demo mission: 3 enemies vs the same allied team** (eliminate scenario that ends
+  cleanly).
+
+## AJ. Unit panel (major)
+
+- **[ ] AJ1 — Unit panel more OPAQUE** (easier to read over the map).
+- **[ ] AJ2 — Panel next to Fire Analysis:** position the contact/unit panel beside the fire-analysis
+  panel.
+- **[ ] AJ3 — Set orders ON the unit panel:** bearing-at-destination, on-move, speed selection.
+- **[ ] AJ4 — Show CURRENT ORDERS on the unit panel:** "move" / "fire at will" / "stationary" /
+  "holding fire". Two sections: (a) MOVEMENT + speed of movement, (b) FIRE orders.
+
+## AK. Flags & flagship
+
+- **[ ] AK1 — RIGHT-CLICK a movement flag to REMOVE it.**
+- **[ ] AK2 — FLAGSHIP is a STAR shape** (distinct marker). The flagship is where orders originate;
+  on harder difficulty the comms link to it is critical (more than other units). Foundation for a
+  later mechanic.
+
+## AL. Wrap-up
+
+- **[ ] AL1 — After these: ARCHIVE / SAVE the whole barebones demo system** (snapshot) before moving
+  to substantial changes. This is the "barebones demo ready" milestone.

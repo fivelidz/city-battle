@@ -334,6 +334,9 @@
     bindFly();
     addEventListener("resize", onResize);
     renderer.domElement.addEventListener("click", onClick);
+    renderer.domElement.addEventListener("dblclick", function (e) {   // AE2: double-click a unit to zoom in
+      var g = pickUnit(e); if (g) { selectUnit(g); focusUnit(g); }
+    });
     renderer.domElement.addEventListener("contextmenu", onContext);
     var startCity = QS.get("city");
     if (!startCity || !CITIES.some(function (c) { return c[0] === startCity; })) startCity = "sydney";
@@ -513,7 +516,7 @@
     initCommand();
     if (cmd.forceScenario) { setCommandMode(true); loadScenario(cmd.forceScenario); }
     else if (cmd.forcePlay) { setCommandMode(true); setPlaying(true); autoIssueDemoOrders(); }
-    else if (QS.get("cmd") !== "0") { setCommandMode(true); }   // AD2: command mode ON by default
+    else if (QS.get("cmd") !== "0") { setCommandMode(true); loadScenario("skirmish"); }   // AD2/AI2: command mode + eliminate demo by default
 
     // ----- camera framing -----
     frameCamera();
@@ -1521,10 +1524,10 @@
     //   HIGH-ANGLE/MORTAR  steep near-vertical lob: MINIMAL dead space (drops into defilade)
     //                      but MUCH SHORTER max range (E2) — a short-reach specialist.
     if (mode === "mortar" || mode === "highangle")
-                            return { minFrac: 0.04, reachMul: 0.45, high: true,  arcGain: 1.10, label: "HIGH-ANGLE / MORTAR" };
+                            return { minFrac: 0.04, reachMul: 0.50, high: true,  arcGain: 1.10, label: "HIGH-ANGLE / MORTAR" };
     if (mode === "indirect" || mode === "oblique")
-                            return { minFrac: 0.02, reachMul: 0.96, high: true,  arcGain: 0.07, label: "INDIRECT" };
-    return                         { minFrac: 0.00, reachMul: 0.90, high: false, arcGain: 0.00, label: "DIRECT" };
+                            return { minFrac: 0.02, reachMul: 1.00, high: true,  arcGain: 0.07, label: "INDIRECT" };
+    return                         { minFrac: 0.00, reachMul: 1.00, high: false, arcGain: 0.00, label: "DIRECT" };
   }
 
   // Can a shell of muzzle speed v, fired on the chosen arc, reach (clear all intervening
@@ -3139,13 +3142,26 @@
   // Gentle, OPTIONAL camera ease toward a unit when cycling (orbit mode only; never fights fly cam).
   // Only nudges the orbit target — keeps the current zoom/angle so it doesn't disorient the player.
   function focusUnit(g) {
-    if (fly.on || !controls) return;
+    if (!g) return;
     var d = g.userData;
     var ty = heightAt(d.x, d.z);
-    var cur = controls.target;
-    // ease 55% of the way to the new unit (subtle, not a snap)
-    cur.set(cur.x + (d.x - cur.x) * 0.55, cur.y + (ty - cur.y) * 0.55, cur.z + (d.z - cur.z) * 0.55);
-    controls.update();
+    var span = Math.max(map.size_m[0], map.size_m[1]);
+    var closeDist = span * 0.06;   // AE2: pull the camera IN close to the unit
+    if (fly.on) {
+      // fly mode: drop the fly camera to a close 3/4 view looking at the unit
+      camera.position.set(d.x - Math.sin(fly.yaw) * closeDist, ty + closeDist * 0.7, d.z - Math.cos(fly.yaw) * closeDist);
+      var look = new THREE.Vector3(d.x, ty + 8, d.z);
+      var dir = new THREE.Vector3().subVectors(look, camera.position).normalize();
+      fly.yaw = Math.atan2(dir.x, dir.z); fly.pitch = Math.asin(clamp(dir.y, -1, 1));
+      camera.lookAt(look);
+    } else if (controls) {
+      // orbit mode: recenter on the unit AND dolly the camera in close
+      controls.target.set(d.x, ty + 8, d.z);
+      var toCam = new THREE.Vector3().subVectors(camera.position, controls.target);
+      toCam.normalize().multiplyScalar(closeDist * 1.6);
+      camera.position.copy(controls.target).add(new THREE.Vector3(toCam.x, Math.max(toCam.y, closeDist), toCam.z));
+      controls.update();
+    }
   }
 
   // ---------- camera ----------
@@ -3737,10 +3753,9 @@
   function updateFly(dt) {
     if (!fly.on) return;
     var fwd = flyForward();
-    // strafe RIGHT = up x forward (Three.js right-handed): cross(fwd,up) would give LEFT, so
-    // D would strafe the wrong way. up x fwd gives the true camera-right vector.
+    // strafe RIGHT = forward x up (right-handed Y-up). D = +right, A = -right.
     var up = new THREE.Vector3(0, 1, 0);
-    var right = new THREE.Vector3().crossVectors(up, fwd).normalize();
+    var right = new THREE.Vector3().crossVectors(fwd, up).normalize();
     var move = new THREE.Vector3();
     var k = fly.keys;
     if (k.w) move.add(fwd);
@@ -4611,10 +4626,22 @@
     cmd.objHold = 0; cmd.outcome = ""; cmd._sighted = false; hideObjectiveBanner();
     cmd.objWin = key === "harbour_crossing" ? "hold"
               : key === "ridge_defence"    ? "eliminate"
-              : key === "convoy_escort"    ? "escort" : "";
+              : key === "convoy_escort"    ? "escort"
+              : key === "skirmish"         ? "eliminate" : "";
     var u = units;   // 6 demo units
     var objName = "—";
-    if (key === "harbour_crossing") {
+    if (key === "skirmish") {
+      // AI2: clean ELIMINATE demo — 3 allied vs 3 enemies, all in mutual reach on open ground,
+      // so the battle actually ends on a wipe (win = all hostiles eliminated).
+      relabelUnit(u[0], "ANZAC-01", "friend", "Line",  "BR-155", 6500, W*0.26, L*0.36, "Battle line. FLAGSHIP — orders originate here.");
+      relabelUnit(u[1], "ANZAC-02", "friend", "Siege", "SG-305", 9500, W*0.20, L*0.30, "Siege gun — long reach fire support.");
+      relabelUnit(u[2], "ANZAC-03", "friend", "Recon", "SR-76",  2800, W*0.30, L*0.44, "Forward spotter — feeds the net.");
+      relabelUnit(u[3], "RAIDER-1", "hostile", "Line",  "?-150", 5500, W*0.70, L*0.32, "Enemy battle line.");
+      relabelUnit(u[4], "RAIDER-2", "hostile", "Line",  "?-130", 5000, W*0.74, L*0.44, "Enemy support.");
+      relabelUnit(u[5], "RAIDER-3", "hostile", "Recon", "?-90",  3200, W*0.66, L*0.54, "Fast enemy flanker.");
+      objName = "ELIMINATE ALL ENEMIES";
+      setFlagship(u[0]);
+    } else if (key === "harbour_crossing") {
       // friendlies south of harbour, objective on far north shore, 2 enemies defending
       relabelUnit(u[0], "ANZAC-01", "friend", "Line",  "BR-155", 6500, W*0.42, L*0.14, "Assault element. Crossing the harbour to seize the north shore.");
       relabelUnit(u[1], "ANZAC-02", "friend", "Siege", "SG-305", 9500, W*0.55, L*0.10, "Siege support. Flagship — directs the crossing.");
