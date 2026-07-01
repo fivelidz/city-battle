@@ -3717,7 +3717,8 @@
       target.userData._firedOn = true;            // I4: mark target as being fired on this frame
       // hit model: damage rate scales with closeness within range
       var rangeFrac = bestD / d.rangeM;            // 0=point blank, 1=max range
-      var dps = (3.0 + 7.0 * (1 - rangeFrac));     // 3..10 struct/sec (slow, satisfying)
+      var dps = (1.2 + 3.0 * (1 - rangeFrac));     // 1.2..4.2 struct/sec — SLOW so battles last
+                                                   // long enough to watch arcs/POV and manoeuvre
       var td = target.userData.cmd;
       var before = td.struct;
       td.struct -= dps * dt;
