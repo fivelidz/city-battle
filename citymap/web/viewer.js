@@ -2903,7 +2903,7 @@
       var d = g.userData;
       d.cmd = { flags: [], targetIdx: 0, struct: d.struct != null ? d.struct : 100,
                 ko: false, speed: classSpeed(d.cls), firingTo: null, fireLine: null,
-                fireTimer: 0 };
+                fireTimer: 0, aiTarget: null };
     });
     syncCommandPanel();
   }
@@ -3095,15 +3095,78 @@
   }
 
   // ---- MOVEMENT + COMBAT SIM (stepped only when cmd.playing) -------------------
+  // Terrain gradient (rise/run) sampled at a WORLD (x,z) point — used to slow crabs on grades.
+  function gradientAtWorld(wx, wz) {
+    var t = map.terrain, res = t.res, H = t.heights, cell = t.cell_m;
+    var rz = (map.size_m[1] / (res - 1));
+    var xi = clamp(Math.round(wx / cell), 0, res - 1);
+    var zi = clamp(Math.round(wz / rz), 0, res - 1);
+    return gradientAt(H, res, xi, zi, cell, rz);
+  }
+  // Per-step travel distance for a unit, slowed by terrain grade (steep = slow, cliff = crawl)
+  // and by precipitation. Shared by player and AI movement so both obey the terrain.
+  function moveStep(d, c, dx, dz, dist, dt) {
+    var midx = d.x + dx * 0.5, midz = d.z + dz * 0.5;        // sample ahead (toward the step)
+    var g = gradientAtWorld(clamp(midx, 0, map.size_m[0]), clamp(midz, 0, map.size_m[1]));
+    var terr = g >= SLOPE_T.cliff ? 0.12 : g >= SLOPE_T.steep ? 0.4 : g >= SLOPE_T.moderate ? 0.7 : 1.0;
+    var step = c.speed * dt * terr;
+    if (step > dist) step = dist;
+    return step;
+  }
+
+  // ---------- ENEMY AI (maneuvering opponent) ----------
+  // Hostiles are no longer stationary turrets. On a slow cadence each hostile picks a move target
+  // by STANCE: advance on the objective / nearest foe, but stop at a stand-off just inside its own
+  // gun range with line of sight, so it fights from good ground instead of walking into point blank.
+  // Cheap: runs every AI_PERIOD sim-seconds, straight-line targets (no full pathfinder), which is
+  // plenty for a readable demo battle.
+  var AI_PERIOD = 1.6;
+  function enemyAI(dt) {
+    cmd._aiTimer = (cmd._aiTimer || 0) + dt;
+    if (cmd._aiTimer < AI_PERIOD) return;
+    cmd._aiTimer = 0;
+    // objective point the enemy contests (defends/attacks the player's objective flag)
+    var obj = cmd.objective ? cmd.objective.userData : null;
+    units.forEach(function (g) {
+      var d = g.userData, c = d.cmd;
+      if (!c || c.ko || d.side !== "hostile" || d.rangeM <= 0) return;
+      // nearest living friendly = primary threat/target
+      var foe = null, foeD = Infinity;
+      units.forEach(function (e) {
+        var ed = e.userData;
+        if (ed.side !== "friend" || !ed.cmd || ed.cmd.ko) return;
+        var dd = Math.hypot(ed.x - d.x, ed.z - d.z);
+        if (dd < foeD) { foeD = dd; foe = e; }
+      });
+      if (!foe) { c.aiTarget = null; return; }
+      var fd = foe.userData;
+      var standoff = d.rangeM * 0.75;                 // fight from ~75% of max range
+      var haveLOS = hasLOS(d.x, d.z, d.eye, fd.x, fd.z, fd.eye);
+      // If already in range AND with LOS, hold position and shoot (stepEngage does the firing).
+      if (foeD <= d.rangeM && haveLOS) { c.aiTarget = null; return; }
+      // Otherwise move to a stand-off point toward the foe (or toward the objective if defending).
+      var tx, tz;
+      var anchorX = obj ? obj.fx : fd.x, anchorZ = obj ? obj.fz : fd.z;
+      // aim for a point 'standoff' metres from the foe, along the foe->self direction (keep distance)
+      var vx = d.x - fd.x, vz = d.z - fd.z, vlen = Math.hypot(vx, vz) || 1;
+      tx = fd.x + vx / vlen * standoff;
+      tz = fd.z + vz / vlen * standoff;
+      // blend a little toward the objective so defenders converge on the contested ground
+      if (obj) { tx = tx * 0.7 + anchorX * 0.3; tz = tz * 0.7 + anchorZ * 0.3; }
+      c.aiTarget = { x: clamp(tx, 0, map.size_m[0]), z: clamp(tz, 0, map.size_m[1]) };
+    });
+  }
+
   var ARRIVE_M = 50;
   function stepCommandSim(dt) {
     if (!cmd.on || !cmd.playing) return;
     dt = Math.min(dt, 0.1) * simSpeed;   // SPEED control scales movement + combat rate (item G13)
     var moved = false;
+    enemyAI(dt);   // hostiles think + set their own move targets (maneuvering opponent)
     units.forEach(function (g) {
       var d = g.userData, c = d.cmd;
       if (!c || c.ko) return;
-      // --- MOVEMENT toward current flag ---
+      // --- MOVEMENT toward current flag (player units) ---
       if (c.flags.length && c.targetIdx < c.flags.length) {
         var f = c.flags[c.targetIdx].userData;
         var dx = f.fx - d.x, dz = f.fz - d.z;
@@ -3112,14 +3175,25 @@
           c.targetIdx++;
           if (c.targetIdx >= c.flags.length) { moved = true; }   // arrived at last flag
         } else {
-          var step = c.speed * dt;
-          if (step > dist) step = dist;
+          var step = moveStep(d, c, dx, dz, dist, dt);
           d.x += dx / dist * step; d.z += dz / dist * step;
           var ny = heightAt(clamp(d.x,0,map.size_m[0]), clamp(d.z,0,map.size_m[1]));
           g.position.set(d.x, ny, d.z);
           d.eye = ny + d._eyeOff;
-          // face travel direction
-          g.rotation.y = Math.atan2(dx, dz);
+          g.rotation.y = Math.atan2(dx, dz);   // face travel direction
+          moved = true;
+        }
+      // --- MOVEMENT toward AI target (hostile units) ---
+      } else if (c.aiTarget) {
+        var ax = c.aiTarget.x - d.x, az = c.aiTarget.z - d.z;
+        var adist = Math.hypot(ax, az);
+        if (adist > ARRIVE_M) {
+          var astep = moveStep(d, c, ax, az, adist, dt);
+          d.x += ax / adist * astep; d.z += az / adist * astep;
+          var any = heightAt(clamp(d.x,0,map.size_m[0]), clamp(d.z,0,map.size_m[1]));
+          g.position.set(d.x, any, d.z);
+          d.eye = any + d._eyeOff;
+          g.rotation.y = Math.atan2(ax, az);
           moved = true;
         }
       }
