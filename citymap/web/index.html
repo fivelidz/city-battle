@@ -143,11 +143,14 @@
     display:none;flex-direction:column;overflow:hidden}
   #clogFullBody{font-size:10.5px;line-height:1.7;letter-spacing:.02em;overflow-y:auto;flex:1 1 auto}
   /* L1: COMBAT POV inset — a border frame over the GL scissor viewport (bottom-right) */
-  #povView{position:fixed;right:14px;bottom:150px;z-index:6;pointer-events:none;
+  /* AM1: POV inset — placed bottom-right above the toggles; its LABEL is a drag handle */
+  #povView{position:fixed;right:222px;bottom:14px;z-index:9;
     border:1px solid var(--amber);box-shadow:0 0 14px rgba(176,130,44,.25);
     clip-path:polygon(0 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%)}
-  #povLabel{position:absolute;top:0;left:0;right:0;background:rgba(13,17,16,.8);color:var(--amber);
-    font-size:9.5px;letter-spacing:.08em;padding:2px 6px;text-align:center;border-bottom:1px solid var(--hair)}
+  #povView canvas{pointer-events:none;display:block}
+  #povLabel{position:absolute;top:0;left:0;right:0;background:rgba(13,17,16,.9);color:var(--amber);
+    font-size:9.5px;letter-spacing:.08em;padding:3px 6px;text-align:center;border-bottom:1px solid var(--hair);
+    cursor:move;user-select:none}
   /* F2: FIRE SOLUTION maths panel (bottom-left, above the unit panel area / right of it) */
   #firesol{left:290px;bottom:140px;width:250px;z-index:7}
   #firesol .fsgrid{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-top:6px;font-size:10.5px}
@@ -174,6 +177,14 @@
   #events .ev .a{color:var(--teal)} #events .ev .h{color:var(--red)}
   @keyframes evfade{0%{opacity:0;transform:translateY(-6px)}10%{opacity:1;transform:translateY(0)}
     75%{opacity:1}100%{opacity:0;transform:translateY(-4px)}}
+  /* AP1: contact-status list (who sees/fires on a selected enemy) */
+  #uContactList .crow{display:flex;align-items:center;gap:6px;font-size:11px;line-height:1.7;
+    border-left:2px solid var(--dim);padding-left:7px;margin:2px 0}
+  #uContactList .crow.fire{border-left-color:var(--red)}
+  #uContactList .crow .em{font-size:12px;min-width:34px}
+  #uContactList .crow .nm{color:var(--ink)}
+  #uContactList .crow.fire .nm{color:#ff9a8a}
+  #uContactList .none{color:var(--dim);font-size:11px}
   /* AC2: nicer custom scrollbars (webkit + firefox) */
   *{scrollbar-width:thin;scrollbar-color:#3a4a42 transparent}
   ::-webkit-scrollbar{width:8px;height:8px}
@@ -265,6 +276,7 @@
     <label class="opt"><input type="checkbox" id="optArcs" checked> Show fire trajectory arcs</label>
     <label class="opt"><input type="checkbox" id="optPov" checked> Combat POV inset</label>
     <label class="opt"><input type="checkbox" id="optNames" checked> Unit name labels</label>
+    <label class="opt"><input type="checkbox" id="optMapLabels"> Map text labels (flagship / objective)</label>
     <div class="row" style="margin-top:8px"><span class="dim" style="font-size:10px">DEFAULT SIM SPEED</span></div>
     <input type="range" id="optSpeed" min="0.25" max="4" step="0.25" value="1" style="width:100%">
     <div class="row dim" id="optSpeedRead" style="font-size:10px">1&times;</div>
@@ -509,11 +521,18 @@
   <div class="row"><span class="dim">COMMS</span> <span id="uComms" class="k">--</span></div>
 
   <!-- AJ3/AJ4: ORDERS on the unit panel — movement (with speed) + fire orders -->
+  <!-- AP1: for a selected ENEMY — the list of friendlies seeing / firing on it -->
+  <div id="uContact" style="display:none">
+    <div class="hdr" style="margin-top:8px;font-size:10px">Contact Status</div>
+    <div id="uContactList"></div>
+  </div>
+  <div id="uOwnOrders">
   <div class="hdr" style="margin-top:8px;font-size:10px">Movement</div>
   <div class="row"><span class="dim">ORDER</span> <span id="uMoveOrder" class="a">STATIONARY</span></div>
   <div class="row"><span class="dim">AT DEST</span> <span id="uDestBrg" class="k">—</span></div>
+  <div class="row"><span class="dim">SPEED</span> <span id="uSpeedNow" class="k">0</span> <span class="dim">/</span> <span id="uSpeedMax" class="dim">— km/h</span></div>
   <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
-    <span class="dim" style="font-size:9px">SPEED</span>
+    <span class="dim" style="font-size:9px">THROTTLE</span>
     <input type="range" id="uSpeed" min="30" max="130" step="5" value="100" style="flex:1">
     <span id="uSpeedRead" class="k" style="font-size:10px;min-width:34px">100%</span>
   </div>
@@ -522,6 +541,7 @@
     <button class="btn on" id="uFireWill" style="flex:1;padding:5px 4px;font-size:10px">FIRE AT WILL</button>
     <button class="btn" id="uHoldFire" style="flex:1;padding:5px 4px;font-size:10px">HOLD FIRE</button>
   </div>
+  </div><!-- /uOwnOrders -->
   <div id="uFaceRow">
     <canvas id="uFaceCanvas" width="64" height="64"></canvas>
     <div id="uFaceText">
@@ -581,11 +601,6 @@
 
 
 
-<div class="panel" id="ctrls">
-  <button class="btn" id="zin">+</button>
-  <button class="btn" id="zout">&minus;</button>
-  <button class="btn" id="rst">RESET</button>
-</div>
 <div class="hint"><span style="color:var(--amber)">FLY CAM</span> on by default &middot; <span style="color:var(--teal)">WASD</span> move &middot; <span style="color:var(--teal)">DRAG</span> look &middot; <span style="color:var(--amber)">F</span> = orbit &middot; CLICK a crab to inspect<br><span style="color:var(--amber)">, / .</span> cycle units &middot; <span style="color:var(--amber)">SHADE OUT OF RANGE</span> / <span style="color:var(--amber)">NET LOS</span> / <span style="color:var(--amber)">DEAD ZONES</span> overlays<br>map review viewer &mdash; shared data with the Unity game</div>
 
 <div id="cmdHint">

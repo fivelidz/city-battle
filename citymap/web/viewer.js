@@ -114,6 +114,7 @@
                fire: false, slope: false, comms: QS.get("comms") === "1",
                deadzones: false, shaderange: QS.get("shadeoutrange") === "1",
                immunity: QS.get("threat") === "1",   // V2: independent THREAT/immunity band toggle
+               mapLabels: false,   // AN2: on-map text labels (flagship/objective) OFF by default
                netlos: QS.get("netlos") === "1" };
 
   // PREVIEW MODE: "current" (default) | "arrival" — compute range+LOS+dead-zones as if the
@@ -2238,6 +2239,16 @@
          : cls === "Convoy" ? "C" : "";
   }
 
+  // AQ1: a dim red X marker for a knocked-out unit (replaces its diamond/triangle).
+  function makeKoXTexture() {
+    var S = 128, cv = document.createElement("canvas"); cv.width = cv.height = S;
+    var ctx = cv.getContext("2d"), m = 26;
+    ctx.strokeStyle = "rgba(8,11,10,0.9)"; ctx.lineWidth = 20; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(m, m); ctx.lineTo(S - m, S - m); ctx.moveTo(S - m, m); ctx.lineTo(m, S - m); ctx.stroke();
+    ctx.strokeStyle = "#9a3a33"; ctx.lineWidth = 12;
+    ctx.beginPath(); ctx.moveTo(m, m); ctx.lineTo(S - m, S - m); ctx.moveTo(S - m, m); ctx.lineTo(m, S - m); ctx.stroke();
+    var tex = new THREE.CanvasTexture(cv); tex.needsUpdate = true; return tex;
+  }
   // I3/I4: a bold outline RING (coloured ring with a dark inner border) for selection / fired-on.
   function makeOutlineRingTexture(colInt, darkInt) {
     var S = 128, cv = document.createElement("canvas"); cv.width = cv.height = S;
@@ -2290,25 +2301,25 @@
     var d = g.userData; if (!d.spotMat) return;
     if (d.side !== "hostile" || (d.cmd && d.cmd.ko)) { if (d.spotTag) d.spotTag.visible = false; return; }
     var sp = spottersOf(g);
-    var seeingOnly = sp.eyes.filter(function (n) { return sp.guns.indexOf(n) < 0; });   // see but not firing
-    // AG1: build the actual-names lines. ✛ firing (red) / 👁 seeing (teal) / 📡 comms-only (dim).
-    var lines = [];
-    if (sp.guns.length)     lines.push({ c: "#ff8a6a", t: "\u2725 " + sp.guns.join(" ") });
-    if (seeingOnly.length)  lines.push({ c: "#7fd6c6", t: "\uD83D\uDC41 " + seeingOnly.join(" ") });
-    if (sp.commsOnly.length)lines.push({ c: "#9aa89e", t: "\uD83D\uDCE1 " + sp.commsOnly.length + " on net" });
-    var key = lines.map(function (l) { return l.t; }).join("|") + "|" + (markersOn ? 1 : 0);
+    var seeingOnly = sp.eyes.filter(function (n) { return sp.guns.indexOf(n) < 0; });
+    // On-map tag stays COMPACT (emoji + count); the NAMED breakdown is in the panel (AP1) when the
+    // enemy is selected.  ✛ firing (red) · 👁 seeing (teal).
+    var txt = "";
+    if (sp.guns.length) txt += "\u2725" + sp.guns.length + " ";
+    if (seeingOnly.length) txt += "\uD83D\uDC41" + seeingOnly.length;
+    txt = txt.trim();
+    var key = txt + "|" + (markersOn ? 1 : 0);
     if (d._spotKey === key) return; d._spotKey = key;
-    if (!lines.length || !markersOn) { d.spotTag.visible = false; d.spotMat.opacity = 0; return; }
-    var W = 256, lineH = 24, H = lines.length * lineH + 8;
-    var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    if (!txt || !markersOn) { d.spotTag.visible = false; d.spotMat.opacity = 0; return; }
+    var W = 128, H = 34, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
     var ctx = cv.getContext("2d");
-    ctx.font = "bold 17px DejaVu Sans Mono, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(10,14,12,0.72)"; ctx.fillRect(0, 0, W, H);
-    lines.forEach(function (l, i) { ctx.fillStyle = l.c; ctx.fillText(l.t, W / 2, 6 + lineH * (i + 0.5)); });
+    ctx.font = "bold 19px DejaVu Sans Mono, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(10,14,12,0.72)"; ctx.fillRect(0, 6, W, H - 12);
+    ctx.fillStyle = sp.guns.length ? "#ff8a6a" : "#7fd6c6";
+    ctx.fillText(txt, W / 2, H / 2);
     if (d.spotMat.map) d.spotMat.map.dispose();
     d.spotMat.map = new THREE.CanvasTexture(cv); d.spotMat.map.needsUpdate = true;
-    // scale the sprite to the tag's aspect so names are legible
-    d.spotTag.scale.set(d.mkSize * 2.4, d.mkSize * 2.4 * (H / W), 1);
+    d.spotTag.scale.set(d.mkSize * 1.6, d.mkSize * 1.6 * (H / W), 1);
     d.spotTag.visible = true; d.spotMat.opacity = 1;
   }
 
@@ -3148,9 +3159,35 @@
     cmd.fireGunIdx = 0;   // reset to primary gun when selecting a new unit
     updateFirePanel(g);
     updateUnitOrders(g);   // AJ3/AJ4: movement + fire order readout / controls
+    renderContactList(g);  // AP1: for enemies, who sees/fires on them
     rebuildOverlays();
     refreshCommsLine(g);
     if (typeof syncCommandPanel === "function") syncCommandPanel();
+  }
+
+  // AP1: when an ENEMY is selected, list every friendly SEEING or FIRING on it, named, with the
+  // 👁 (sees) and ✛ (fires) emojis (both may show, or just one). Own-orders sections hide for enemies.
+  function renderContactList(g) {
+    var box = document.getElementById("uContact"), own = document.getElementById("uOwnOrders");
+    var list = document.getElementById("uContactList");
+    if (!box || !list) return;
+    var d = g.userData;
+    if (d.side !== "hostile") { box.style.display = "none"; if (own) own.style.display = "block"; return; }
+    box.style.display = "block"; if (own) own.style.display = "none";
+    var sp = spottersOf(g);
+    // union of everyone who sees or fires, in a stable order
+    var names = {};
+    sp.eyes.forEach(function (n) { names[n] = names[n] || {}; names[n].see = true; });
+    sp.guns.forEach(function (n) { names[n] = names[n] || {}; names[n].fire = true; });
+    sp.commsOnly.forEach(function (n) { names[n] = names[n] || {}; names[n].comms = true; });
+    var keys = Object.keys(names);
+    if (!keys.length) { list.innerHTML = '<div class="none">no allied contact</div>'; return; }
+    list.innerHTML = keys.map(function (n) {
+      var s = names[n];
+      var em = (s.fire ? "\u2725" : "") + (s.see ? "\uD83D\uDC41" : (s.comms ? "\uD83D\uDCE1" : ""));
+      return '<div class="crow ' + (s.fire ? "fire" : "") + '"><span class="em">' + em +
+             '</span> <span class="nm">' + escapeHtml(n) + '</span></div>';
+    }).join("");
   }
 
   // AJ3/AJ4: refresh the unit panel's MOVEMENT + FIRE order sections for the selected unit.
@@ -3169,6 +3206,13 @@
     } else if (c.aiTarget) { mo = "MANOEUVRING"; }
     var moEl = document.getElementById("uMoveOrder"); if (moEl) moEl.textContent = mo;
     var dbEl = document.getElementById("uDestBrg"); if (dbEl) dbEl.textContent = destBrg;
+    // AO1: current + max speed (km/h). Moving = has a live flag/aiTarget and isn't at its dest.
+    var maxMS = classSpeed(d.cls) * ((c.speedPct != null ? c.speedPct : 100) / 100);
+    var moving = (mo !== "STATIONARY" && !c.ko);
+    var curMS = moving ? (c.speed || maxMS) : 0;
+    var toKmh = function (ms) { return Math.round(ms * 3.6); };
+    var snEl = document.getElementById("uSpeedNow"); if (snEl) snEl.textContent = toKmh(curMS);
+    var smEl = document.getElementById("uSpeedMax"); if (smEl) smEl.textContent = toKmh(classSpeed(d.cls)) + " km/h";
     // speed slider (% of class speed)
     var sp = document.getElementById("uSpeed"), spr = document.getElementById("uSpeedRead");
     if (sp) {
@@ -3315,6 +3359,24 @@
     // ---- R5: DRAGGABLE PANELS — grab a panel's header to move it; layout persists in localStorage ----
     enablePanelDragging();
 
+    // ---- AM1: make the POV inset draggable by its label ----
+    var povV = document.getElementById("povView"), povL = document.getElementById("povLabel");
+    if (povV && povL) {
+      var pd = null;
+      povL.addEventListener("pointerdown", function (e) {
+        var r = povV.getBoundingClientRect();
+        pd = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+        povV.style.left = r.left + "px"; povV.style.top = r.top + "px"; povV.style.right = "auto"; povV.style.bottom = "auto";
+        povL.setPointerCapture(e.pointerId); e.preventDefault();
+      });
+      povL.addEventListener("pointermove", function (e) {
+        if (!pd) return;
+        povV.style.left = clamp(e.clientX - pd.dx, 0, innerWidth - 60) + "px";
+        povV.style.top = clamp(e.clientY - pd.dy, 0, innerHeight - 24) + "px";
+      });
+      povL.addEventListener("pointerup", function (e) { pd = null; try { povL.releasePointerCapture(e.pointerId); } catch (er) {} });
+    }
+
     // ---- R6: TITLE MENU (panels / hotkeys / tutorial) ----
     var tmBtn = document.getElementById("titleMenuBtn"), tMenu = document.getElementById("titleMenu");
     var SIDE_PANELS = ["legend", "wx", "unit", "cmd", "clog", "firesol", "compassHud"];
@@ -3378,6 +3440,7 @@
       namesOn = v; var b = document.getElementById("tNames"); if (b) b.classList.toggle("on", v);
       units.forEach(function (g) { if (g.userData.label) g.userData.label.visible = namesOn && markersOn; });
     });
+    bindOpt("optMapLabels", function () { return show.mapLabels; }, function (v) { show.mapLabels = v; applyMapLabels(); });
     var opSpeed = document.getElementById("optSpeed"), opSpeedRead = document.getElementById("optSpeedRead");
     if (opSpeed) { opSpeed.value = simSpeed; opSpeed.oninput = function () { setSimSpeed(parseFloat(opSpeed.value)); if (opSpeedRead) opSpeedRead.textContent = fmtSpeed(simSpeed) + "\u00D7"; }; }
 
@@ -3584,9 +3647,7 @@
     vS.classList.toggle("on", viewMode === "shaded"); vE.classList.toggle("on", viewMode === "elevation");
     vS.onclick = function () { viewMode = "shaded"; vS.classList.add("on"); vE.classList.remove("on"); recolorTerrain(); };
     vE.onclick = function () { viewMode = "elevation"; vE.classList.add("on"); vS.classList.remove("on"); recolorTerrain(); };
-    document.getElementById("zin").onclick = function () { dolly(0.8); };
-    document.getElementById("zout").onclick = function () { dolly(1.25); };
-    document.getElementById("rst").onclick = function () { frameCamera(); };
+    // (AR1: the +/-/RESET #ctrls panel was removed — wheel zoom + fly cam replace it)
     function tog(id, key) {
       var el = document.getElementById(id);
       el.onclick = function () {
@@ -4089,6 +4150,12 @@
     });
   }
 
+  // AN2/AN3: show/hide on-map text labels (flagship tag + objective tag).
+  function applyMapLabels() {
+    if (cmd.flagship && cmd.flagship.userData.flagTag) cmd.flagship.userData.flagTag.visible = !!show.mapLabels;
+    if (cmd.objective && cmd.objective.userData.objLabel) cmd.objective.userData.objLabel.visible = !!show.mapLabels;
+  }
+
   // ---- FLAGSHIP ----------------------------------------------------------------
   function setFlagship(g) {
     if (!g || g.userData.side !== "friend") return;
@@ -4108,9 +4175,12 @@
     crown.renderOrder = 26;
     crown.position.set(0, d.baseMkY + d.mkSize * 0.55, 0);
     crown.renderOrder = 25; g.add(crown); d.crown = crown;
+    // AN1/AN2: the "FLAGSHIP" text tag is OFF by default (the star is enough) — shown only when
+    // the map-text-labels option is enabled.
     var tag = makeTagSprite("FLAGSHIP", FLAG_COL.objective, span);
     tag.position.set(0, d.baseMkY + d.mkSize * 1.25, 0);
-    tag.material.depthTest = false; tag.renderOrder = 25; g.add(tag); d.flagTag = tag;
+    tag.material.depthTest = false; tag.renderOrder = 25; tag.visible = !!show.mapLabels;
+    g.add(tag); d.flagTag = tag;
     // flagship is the comms command node — refresh net if comms overlay on
     if (show.comms) rebuildOverlays();
     syncCommandPanel();
@@ -4504,15 +4574,19 @@
         if (o.material.emissive) o.material.emissive.setHex(0x000000);
       }
     });
-    if (g.userData.mkMat) g.userData.mkMat.opacity = 0.4;
     if (g.userData.labelMat) g.userData.labelMat.opacity = 0.4;
-    // KO tag
-    if (!g.userData.koTag) {
-      var span = Math.max(map.size_m[0], map.size_m[1]);
-      var t = makeTagSprite("KNOCKED OUT", 0x9a3a33, span);
-      t.position.set(0, g.userData.baseMkY + g.userData.mkSize * 0.55, 0);
-      t.material.depthTest = false; t.renderOrder = 26; g.add(t); g.userData.koTag = t;
+    // AQ1: no big "KNOCKED OUT" banner — instead the MARKER becomes a dim X (the small "✖ KO"
+    // status strip stays). Hide selection/fired rings + spot tag for the dead unit.
+    if (g.userData.mkMat) {
+      if (g.userData.mkMat.map) g.userData.mkMat.map.dispose();
+      g.userData.mkMat.map = makeKoXTexture();
+      g.userData.mkMat.map.needsUpdate = true;
+      g.userData.mkMat.opacity = 0.75;
     }
+    if (g.userData.selMat) g.userData.selMat.opacity = 0;
+    if (g.userData.firedMat) g.userData.firedMat.opacity = 0;
+    if (g.userData.spotTag) g.userData.spotTag.visible = false;
+    if (g.userData.crown) g.userData.crown.visible = false;   // dead flagship: drop the star
     clearOrders(g);
     if (cmd.flagship === g) { cmd.flagshipOffNet = true; syncCommandPanel(); }
     syncCommandPanel();
@@ -4805,9 +4879,12 @@
     // make objective bigger
     f.scale.set(1.6, 1.6, 1.6);
     var span = Math.max(map.size_m[0], map.size_m[1]);
+    // AN3: smaller objective label, and OFF by default (shown only with map-text-labels on).
     var tag = makeTagSprite(label || "OBJECTIVE", FLAG_COL.objective, span);
-    tag.position.set(0, span * 0.028, 0); tag.material.depthTest = false; tag.renderOrder = 25;
-    f.add(tag);
+    tag.scale.multiplyScalar(0.6);
+    tag.position.set(0, span * 0.020, 0); tag.material.depthTest = false; tag.renderOrder = 25;
+    tag.visible = !!show.mapLabels;
+    f.add(tag); f.userData.objLabel = tag;
     cmd.flagGroup.add(f);
     cmd.objective = f;
   }
@@ -4877,7 +4954,7 @@
 
     // decay the mini combat log over real time (re-render ~4x/sec even with no new lines)
     _clogDecayT = (_clogDecayT || 0) + dt;
-    if (cmd.on && _clogDecayT > 0.25) { _clogDecayT = 0; renderClog(); if (unitListOpen) renderUnitList(); if (selected) updateUnitOrders(selected); }
+    if (cmd.on && _clogDecayT > 0.25) { _clogDecayT = 0; renderClog(); if (unitListOpen) renderUnitList(); if (selected) { updateUnitOrders(selected); renderContactList(selected); } }
 
     // I4/I5: per-frame marker upkeep — fired-on red ring + ammo/status strip.
     if (cmd.on) {
@@ -5028,29 +5105,53 @@
     var pad = H * 0.18, gt = H - pad, gb = H - 6;
     function ex(i) { return 8 + (W - 16) * i / N; }
     function ey(e) { return gb - (gt - 8) * (e - minE) / Math.max(1, maxE - minE); }
-    // terrain fill
+    // AM2: REAL ballistic arc. Solve the actual firing solution (muzzle vel, elevation) with the
+    // SAME physics as fireSolution(), then plot the true projectile height y(x) = x·tanθ − g·x²/
+    // (2 v² cos²θ) in metres, mapped through the same elevation axis as the terrain. This makes the
+    // arc genuinely clear (or clip) the terrain — no fake fixed apex.
+    var high = f.cmd && f.cmd.fireSol ? (f.cmd.fireSol.mode !== "direct") : false;
+    var gunMuzzleY = elevs[0] + (f.eye ? 8 : 8);           // metres: muzzle a touch above ground
+    var tgtY = elevs[N] + 4;
+    var v = muzzleSpeed(f.rangeM || Math.max(dist, 800));
+    var g0 = 9.81;
+    // choose elevation so the arc passes through (dist, tgtY-gunMuzzleY); pick low or high root.
+    var dyTot = tgtY - gunMuzzleY;
+    var disc = v*v*v*v - g0 * (g0*dist*dist + 2*dyTot*v*v);
+    var theta;
+    if (disc < 0) { theta = Math.PI/4; }                  // unreachable — show the max-range 45° arc
+    else {
+      var root = Math.sqrt(disc);
+      var tanLow = (v*v - root) / (g0*dist);
+      var tanHigh = (v*v + root) / (g0*dist);
+      theta = Math.atan(high ? tanHigh : tanLow);
+    }
+    // recompute the vertical elevation range so the ARC's apex is visible too
+    var apexM = gunMuzzleY + (v*Math.sin(theta))*(v*Math.sin(theta))/(2*g0);
+    var loM = minE, hiM = Math.max(maxE, apexM);
+    function ey2(e){ return gb - (gt - 8) * (e - loM) / Math.max(1, hiM - loM); }
+    // redraw terrain against the new vertical scale
     ctx.beginPath(); ctx.moveTo(ex(0), gb);
-    for (var j = 0; j <= N; j++) ctx.lineTo(ex(j), ey(elevs[j]));
+    for (var j = 0; j <= N; j++) ctx.lineTo(ex(j), ey2(elevs[j]));
     ctx.lineTo(ex(N), gb); ctx.closePath();
     ctx.fillStyle = "rgba(90,110,80,0.5)"; ctx.fill();
     ctx.strokeStyle = "rgba(150,170,130,0.8)"; ctx.lineWidth = 2; ctx.stroke();
-    // shell arc (parabola shooter->target)
-    var sy = ey(elevs[0]) - 10, ty = ey(elevs[N]) - 8;
-    var high = f.cmd && f.cmd.fireSol ? (f.cmd.fireSol.mode !== "direct") : false;
-    var apex = high ? H * 0.5 : H * 0.14;
+    // plot the true trajectory in metres
+    var cosT = Math.cos(theta), tanT = Math.tan(theta);
     ctx.strokeStyle = "#e8a838"; ctx.lineWidth = 2; ctx.beginPath();
     for (var k = 0; k <= N; k++) {
-      var tt = k / N, ax = ex(k), ay = (sy + (ty - sy) * tt) - 4 * apex * tt * (1 - tt);
+      var xm = dist * k / N;
+      var ym = gunMuzzleY + xm * tanT - g0 * xm * xm / (2 * v * v * cosT * cosT);
+      var ax = ex(k), ay = ey2(ym);
       if (k === 0) ctx.moveTo(ax, ay); else ctx.lineTo(ax, ay);
     }
     ctx.stroke();
-    // shooter + target ticks
-    ctx.fillStyle = "#57c7bd"; ctx.beginPath(); ctx.arc(ex(0), sy, 5, 0, 7); ctx.fill();
-    ctx.fillStyle = "#d75a52"; ctx.beginPath(); ctx.arc(ex(N), ty, 5, 0, 7); ctx.fill();
-    ctx.fillStyle = "rgba(200,220,210,0.6)"; ctx.font = "18px monospace"; ctx.textBaseline = "bottom";
-    ctx.fillText((dist / 1000).toFixed(1) + " km", 10, H - 8);
+    // shooter + target ticks (at their true ground heights)
+    ctx.fillStyle = "#57c7bd"; ctx.beginPath(); ctx.arc(ex(0), ey2(gunMuzzleY), 4, 0, 7); ctx.fill();
+    ctx.fillStyle = "#d75a52"; ctx.beginPath(); ctx.arc(ex(N), ey2(tgtY), 4, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(200,220,210,0.65)"; ctx.font = "17px monospace"; ctx.textBaseline = "bottom";
+    ctx.fillText((dist / 1000).toFixed(1) + " km  QE " + (theta * 180 / Math.PI).toFixed(0) + "\u00B0", 10, H - 8);
     var lbl = document.getElementById("povLabel");
-    if (lbl) lbl.textContent = f.name + " \u2192 " + t.name + (high ? "  (arc)" : "  (direct)");
+    if (lbl) lbl.textContent = f.name + " \u2192 " + t.name + (high ? "  (high-angle)" : "  (direct)");
   }
 
   init();

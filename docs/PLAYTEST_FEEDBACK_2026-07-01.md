@@ -399,3 +399,45 @@ B1 real suburb borders.
 
 - **[ ] AL1 — After these: ARCHIVE / SAVE the whole barebones demo system** (snapshot) before moving
   to substantial changes. This is the "barebones demo ready" milestone.
+
+---
+
+# Round 6 feedback — 2026-07-01 (session 5) — "demo ready" final UI
+
+## AM. Fire arc / POV panel
+
+- **[ ] AM1 — Firing-arc panel (combat POV) in the WRONG PLACE + should be MOVABLE (draggable).**
+- **[ ] AM2 — The POV trajectory arc cuts THROUGH the terrain on its panel** — the drawn shell arc
+  should sit ABOVE the terrain profile, not clip through it. Fix the 2D arc so it clears the ridge.
+
+## AN. Labels (flagship / objective)
+
+- **[ ] AN1 — Flagship needs ONLY the STAR**, not a strong "FLAGSHIP" text label. Remove the text.
+- **[ ] AN2 — Such labels (flagship name, etc.) should be addable but OFF BY DEFAULT via the game
+  menu** (a toggle for map text labels).
+- **[ ] AN3 — The OBJECTIVE label blocks the map and can't be removed.** Make it smaller / movable /
+  toggleable so it doesn't obscure the terrain.
+
+## AO. Unit panel — speed
+
+- **[ ] AO1 — Show CURRENT speed of movement AND MAX speed** in the unit panel (not just a %).
+
+## AP. Enemy engagement display (redo again → LIST)
+
+- **[ ] AP1 — The enemy "engaging/seeing" display doesn't read well.** Present it as a LIST: every
+  friendly unit engaging OR seeing the enemy, each row with the emoji(s) next to it — 👁 (sees) and
+  ✛ (fires) may both be present or only one. "1 on net" is useless — must NAME which unit.
+  Put this list where it's readable (unit/contact panel when an enemy is selected, and/or a compact
+  on-map list).
+
+## AQ. Knocked-out display
+
+- **[ ] AQ1 — "KNOCKED OUT" banner obscures too much.** Instead, change the unit SYMBOL to an X
+  shape (clear enough). Keep the small "✖ KO" text on the unit's own status strip (that's fine and
+  unobtrusive) — just drop the big obscuring banner/label.
+
+## AR. Remove stray control panel
+
+- **[ ] AR1 — Remove the #ctrls panel** (the +/−/RESET buttons bottom-right). Purpose unclear; delete.
+
+## Status: after these, the barebones demo is READY.
