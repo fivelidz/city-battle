@@ -4754,52 +4754,62 @@
       pos.needsUpdate = true;
     }
     renderer.render(scene, camera);
-    renderCombatPOV();      // L1: picture-in-picture down the firing unit's LOS to its target
-    renderPortrait();       // J1: mini live render of the selected crab in the unit panel
+    // Y1/Y2 FIX: the portrait + combat POV are now drawn as isolated 2D CANVAS schematics (below),
+    // NOT via a second WebGL scene render into a scissored viewport. The scissor approach was
+    // painting a blank/white box over the map and risking GL-state corruption. 2D canvas is bullet-
+    // proof (own context) and reads more clearly than a tiny 3D crab anyway.
+    drawPortrait2D();
+    drawCombatPOV2D();
   }
 
-  // ---------- J1: SELECTED-UNIT PORTRAIT ----------
-  var portraitCam = null;
-  function renderPortrait() {
+  // ---------- J1: SELECTED-UNIT PORTRAIT (2D schematic) ----------
+  // Top-down tactical schematic of the selected crab: class-shaped hull, gun barrel pointing at the
+  // unit's facing, plus a slow spin so it reads as "alive". Drawn on a 2D canvas in the unit panel.
+  function drawPortrait2D() {
     var wrap = document.getElementById("uPortraitWrap");
     var panel = document.getElementById("unit");
     if (!wrap || !panel || panel.style.display === "none" || !selected) return;
-    var d = selected.userData; if (d.x == null) return;
-    if (!portraitCam) portraitCam = new THREE.PerspectiveCamera(38, 74 / 60, 1, 100000);
-    // slow auto-orbit around the crab hull so you can see its shape + facing
-    var ang = performance.now() * 0.0006;
-    var ground = heightAt(d.x, d.z);
-    var bodyH = (d._eyeOff || 6) * 1.2;                 // approx hull mid height
-    var center = new THREE.Vector3(d.x, ground + bodyH, d.z);
-    var rad = Math.max(28, (d._eyeOff || 6) * 6);       // close framing on the crab
-    portraitCam.position.set(d.x + Math.cos(ang) * rad, ground + bodyH + rad * 0.45, d.z + Math.sin(ang) * rad);
-    portraitCam.lookAt(center);
-    var r = wrap.getBoundingClientRect();
-    // three.js setViewport/setScissor take CSS pixels (it applies pixelRatio internally) with a
-    // BOTTOM-LEFT origin. Convert the panel's top-left DOM rect accordingly. (NO manual *pixelRatio
-    // — doing that double-applied it and corrupted the main render + mouse mapping.)
-    var glH = renderer.domElement.clientHeight;
-    var vx = r.left, vy = glH - r.bottom, vw = r.width, vh = r.height;
-    if (vw < 4 || vh < 4) return;
-    // hide the markers of the selected unit briefly so the portrait shows the model, not the billboard
-    var hid = [d.marker, d.label, d.selRing, d.firedRing, d.halo, d.statusSprite, d.offTag];
-    hid.forEach(function (o) { if (o) o.visible = false; });
-    renderer.setScissorTest(true);
-    renderer.setViewport(vx, vy, vw, vh);
-    renderer.setScissor(vx, vy, vw, vh);
-    portraitCam.aspect = vw / vh; portraitCam.updateProjectionMatrix();
-    renderer.render(scene, portraitCam);
-    restoreMainViewport();     // ALWAYS restore full viewport + scissor off
-    hid.forEach(function (o) { if (o) o.visible = (o === d.marker || o === d.label || o === d.statusSprite) ? markersOn : o.visible; });
-    if (d.selRing && d.selMat) d.selMat.opacity = markersOn ? 1 : 0;   // restore selection ring
-  }
-  // Restore the renderer to the full canvas viewport with scissor OFF. Called after every mini-cam
-  // pass so the main render, the mouse->NDC mapping and the raycaster are never left in a bad state.
-  function restoreMainViewport() {
-    var sz = new THREE.Vector2(); renderer.getSize(sz);
-    renderer.setScissorTest(false);
-    renderer.setViewport(0, 0, sz.x, sz.y);
-    renderer.setScissor(0, 0, sz.x, sz.y);
+    var d = selected.userData;
+    var cv = wrap._cv;
+    if (!cv) {
+      cv = document.createElement("canvas");
+      cv.width = wrap.clientWidth * 2; cv.height = wrap.clientHeight * 2;
+      cv.style.width = "100%"; cv.style.height = "100%"; cv.style.display = "block";
+      wrap.appendChild(cv); wrap._cv = cv;
+    }
+    var ctx = cv.getContext("2d"), W = cv.width, H = cv.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#0c0f0d"; ctx.fillRect(0, 0, W, H);
+    // subtle grid
+    ctx.strokeStyle = "rgba(90,110,100,0.12)"; ctx.lineWidth = 1;
+    for (var gx = 0; gx < W; gx += 16) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke(); }
+    for (var gy = 0; gy < H; gy += 16) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
+    var cx = W / 2, cy = H / 2;
+    var facing = (d.HeadingDeg != null ? d.HeadingDeg : 0) * Math.PI / 180;
+    var spin = performance.now() * 0.0006;
+    var ang = facing + spin * 0;   // keep facing meaningful; static (no dizzy spin)
+    var col = d.side === "friend" ? "#57c7bd" : d.side === "hostile" ? "#d75a52" : "#c9a23a";
+    var scl = (d.cls === "Siege" ? 1.25 : d.cls === "Recon" ? 0.8 : d.cls === "Convoy" ? 0.9 : 1.0) * W * 0.16;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(-ang);
+    // hull (ship-like narrow body), prow forward (+y)
+    ctx.fillStyle = col; ctx.strokeStyle = "rgba(8,11,10,0.9)"; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, -scl * 1.4); ctx.lineTo(scl * 0.5, -scl * 0.6); ctx.lineTo(scl * 0.5, scl * 1.2);
+    ctx.lineTo(-scl * 0.5, scl * 1.2); ctx.lineTo(-scl * 0.5, -scl * 0.6); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // turret + barrel pointing forward
+    ctx.fillStyle = "#0c0f0d"; ctx.beginPath(); ctx.arc(0, 0, scl * 0.42, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -scl * 1.7); ctx.stroke();
+    // legs
+    ctx.strokeStyle = "rgba(120,140,130,0.6)"; ctx.lineWidth = 2;
+    [[-1,-0.4],[-1,0.6],[1,-0.4],[1,0.6]].forEach(function (p) {
+      ctx.beginPath(); ctx.moveTo(p[0]*scl*0.5, p[1]*scl); ctx.lineTo(p[0]*scl*1.0, p[1]*scl*1.1); ctx.stroke();
+    });
+    ctx.restore();
+    // class letter + facing corner
+    ctx.fillStyle = "rgba(200,220,210,0.5)"; ctx.font = "bold 20px monospace"; ctx.textBaseline = "top";
+    ctx.fillText(classLetter(d.cls) || "?", 5, 4);
+    ctx.textAlign = "right"; ctx.fillText(bearingTxt(d.HeadingDeg || 0), W - 5, 4); ctx.textAlign = "left";
   }
 
   // ---------- L1: COMBAT POV VIEWER ----------
@@ -4823,36 +4833,58 @@
     }
     return null;
   }
-  function renderCombatPOV() {
+  // L1 (2D): combat POV as a schematic LOS strip — shooter on the left, target on the right, with
+  // the terrain elevation profile between them + the shell's arc. Drawn on a 2D canvas (isolated).
+  function drawCombatPOV2D() {
     var host = document.getElementById("povView");
     if (!cmd.on || !povOn) { if (host) host.style.display = "none"; return; }
     var pair = pickPovPair();
     if (!pair) { if (host) host.style.display = "none"; return; }
-    if (host) host.style.display = "block";
-    if (!povCamera) povCamera = new THREE.PerspectiveCamera(35, 1.6, 1, Math.max(map.size_m[0], map.size_m[1]) * 3);
+    host.style.display = "block";
     var f = pair.from, t = pair.to;
-    // eye just above/behind the gun, looking at the target
-    var eye = new THREE.Vector3(f.x, f.eye + 14, f.z);
-    var tgt = new THREE.Vector3(t.x, t.eye + 4, t.z);
-    // pull back slightly behind the gun along the reverse LOS so we see our own muzzle
-    var dir = new THREE.Vector3().subVectors(tgt, eye).normalize();
-    eye.addScaledVector(dir, -70);
-    povCamera.position.copy(eye);
-    povCamera.lookAt(tgt);
-    // viewport rectangle in CSS pixels, matched to the DOM frame (#povView is right:14 bottom:150).
-    // three.js applies pixelRatio internally — pass CSS pixels only (bottom-left origin).
-    var W = renderer.domElement.clientWidth, H = renderer.domElement.clientHeight;
-    var pw = Math.min(320, W * 0.24), ph = pw / 1.6;
-    var px = W - pw - 14, py = 150;   // bottom-left origin of the GL viewport
+    var cv = host._cv;
+    if (!cv) {
+      cv = document.createElement("canvas"); cv.style.width = "100%"; cv.style.height = "100%";
+      cv.style.display = "block"; host.appendChild(cv); host._cv = cv;
+    }
+    var pw = Math.min(300, innerWidth * 0.22), ph = pw / 1.7;
     host.style.width = pw + "px"; host.style.height = ph + "px";
-    renderer.setScissorTest(true);
-    renderer.setViewport(px, py, pw, ph);
-    renderer.setScissor(px, py, pw, ph);
-    povCamera.aspect = pw / ph; povCamera.updateProjectionMatrix();
-    renderer.render(scene, povCamera);
-    restoreMainViewport();     // ALWAYS restore full viewport + scissor off
+    cv.width = pw * 2; cv.height = ph * 2;
+    var ctx = cv.getContext("2d"), W = cv.width, H = cv.height;
+    ctx.fillStyle = "#0a0d0c"; ctx.fillRect(0, 0, W, H);
+    // sample the terrain elevation profile shooter->target
+    var N = 60, dx = t.x - f.x, dz = t.z - f.z, dist = Math.hypot(dx, dz);
+    var elevs = [], maxE = 1, minE = 1e9;
+    for (var i = 0; i <= N; i++) {
+      var e = heightAt(f.x + dx * i / N, f.z + dz * i / N); elevs.push(e);
+      if (e > maxE) maxE = e; if (e < minE) minE = e;
+    }
+    var pad = H * 0.18, gt = H - pad, gb = H - 6;
+    function ex(i) { return 8 + (W - 16) * i / N; }
+    function ey(e) { return gb - (gt - 8) * (e - minE) / Math.max(1, maxE - minE); }
+    // terrain fill
+    ctx.beginPath(); ctx.moveTo(ex(0), gb);
+    for (var j = 0; j <= N; j++) ctx.lineTo(ex(j), ey(elevs[j]));
+    ctx.lineTo(ex(N), gb); ctx.closePath();
+    ctx.fillStyle = "rgba(90,110,80,0.5)"; ctx.fill();
+    ctx.strokeStyle = "rgba(150,170,130,0.8)"; ctx.lineWidth = 2; ctx.stroke();
+    // shell arc (parabola shooter->target)
+    var sy = ey(elevs[0]) - 10, ty = ey(elevs[N]) - 8;
+    var high = f.cmd && f.cmd.fireSol ? (f.cmd.fireSol.mode !== "direct") : false;
+    var apex = high ? H * 0.5 : H * 0.14;
+    ctx.strokeStyle = "#e8a838"; ctx.lineWidth = 2; ctx.beginPath();
+    for (var k = 0; k <= N; k++) {
+      var tt = k / N, ax = ex(k), ay = (sy + (ty - sy) * tt) - 4 * apex * tt * (1 - tt);
+      if (k === 0) ctx.moveTo(ax, ay); else ctx.lineTo(ax, ay);
+    }
+    ctx.stroke();
+    // shooter + target ticks
+    ctx.fillStyle = "#57c7bd"; ctx.beginPath(); ctx.arc(ex(0), sy, 5, 0, 7); ctx.fill();
+    ctx.fillStyle = "#d75a52"; ctx.beginPath(); ctx.arc(ex(N), ty, 5, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(200,220,210,0.6)"; ctx.font = "18px monospace"; ctx.textBaseline = "bottom";
+    ctx.fillText((dist / 1000).toFixed(1) + " km", 10, H - 8);
     var lbl = document.getElementById("povLabel");
-    if (lbl) lbl.textContent = f.name + " \u2192 " + t.name;
+    if (lbl) lbl.textContent = f.name + " \u2192 " + t.name + (high ? "  (arc)" : "  (direct)");
   }
 
   init();

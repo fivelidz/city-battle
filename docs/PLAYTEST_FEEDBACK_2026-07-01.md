@@ -290,3 +290,43 @@ B1 real suburb borders.
   triangle billboards) should carry the class-code LETTER as text inside them (e.g. R=Recon,
   L=Line, S=Siege, C=Convoy — or the RtW-style class code). Bake the letter into makeUnitMarker-
   Texture so it reads at a glance which class each crab is, right on the map.
+
+---
+
+# Round 4 feedback — 2026-07-01 (session 3)
+
+## Y. CRITICAL — unit models
+
+- **[ ] Y1 — MODELS blanked by a full WHITE BOX on the map.** The crab meshes are covered by a
+  white box glitch. Still the mini-camera (portrait/POV) render passes corrupting GL state, OR a
+  sprite texture failing. Must fix so the actual 3D crab models show.
+- **[ ] Y2 — Portrait/POV mini-render still not visible in the panels.** The unit-panel portrait
+  and the combat-view POV don't show the model.
+
+## Z. Combat log
+
+- **[ ] Z1 — Mini log should decay by COUNT, not time** (keep the last N lines; don't fade by clock).
+- **[ ] Z2 — FULL combat log must be SCROLLABLE.**
+- **[ ] Z3 — Too easy to accidentally CLOSE the combat log** — make close deliberate (dedicated
+  close affordance, not a whole-header click).
+
+## AA. Speed
+
+- **[ ] AA1 — Default move speed ~100% faster** (double the base sim rate) and **show the speed
+  options** clearly.
+
+## AB. Wiki + menu
+
+- **[ ] AB1 — WIKI: a full wiki already exists — set it up and LINK it from the City Battle menu**
+  (use a sub-agent). 
+- **[ ] AB2 — City Battle menu should also have GAMEPLAY OPTIONS** (settings).
+
+## AC. Panels / UI
+
+- **[ ] AC1 — CONTACT panel overlay can't be moved + interferes with the side-panel options viewer.**
+  Make it draggable and stop it overlapping the right-side toggles.
+- **[ ] AC2 — Scrollbar UI should look nicer** (custom styled scrollbars).
+- **[ ] AC3 — RANGE-CIRCLE distance labels: smaller, more subtle, oriented ALONG the circle**
+  (curved/tangent, not big flat tags).
+- **[ ] AC4 — THREAT band looks weird / DOUBLED** — fix the double-draw.
+- **[ ] AC5 — Add a HIDE NAMES option** (toggle unit name labels off).
