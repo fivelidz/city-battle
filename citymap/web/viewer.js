@@ -91,6 +91,17 @@
   var units = [], selected = null;
   // I1: unit-marker size + on/off (cycled by the MARKERS view button: full -> small -> off)
   var markerScale = 1.0, markersOn = true;
+  // G2: threat gun for the immunity-band calc (name + max reach). "AUTO" uses the enemy on-map.
+  var THREAT_GUNS = [
+    { name: "AUTO (on-map enemy)", rangeM: 0 },
+    { name: "SR-76 Field (76mm)",  rangeM: 2800 },
+    { name: "RB-57 Light (57mm)",  rangeM: 3200 },
+    { name: "BR-120 Line (120mm)", rangeM: 5000 },
+    { name: "HW-105 Howitzer",     rangeM: 5500 },
+    { name: "BR-155 Battle (155mm)", rangeM: 6500 },
+    { name: "SG-305 Siege (305mm)", rangeM: 9500 }
+  ];
+  var immunityThreat = THREAT_GUNS[0];
   var show = { los: true, range: true, bld: true, roads: QS.get("roads") !== "0", wire: false, wind: false, rain: false,
                suburbs: QS.get("suburbs") !== "0", fogcull: QS.get("fogcull") === "1",
                subnames: QS.get("names") === "1",
@@ -1657,25 +1668,32 @@
     ring(maxR, COL.range, 0.7);                 // max range
     if (minR > 0) ring(minR, COL.hostile, 0.6); // high-angle inner dead zone
 
-    // IMMUNITY ZONE band vs a reference enemy gun (approximate, teaching aid):
-    //   inner edge  = range beyond which enemy SIDE (vertical) pen <= our side armour
-    //   outer edge  = range beyond which enemy TOP (plunging) pen  >  our top armour
-    // We model these as fractions of the enemy gun's reach. Band between = immune.
-    var enemy = units.filter(function (g) { return g.userData.side === "hostile" && g.userData.rangeM > 0; })[0];
-    if (enemy) {
-      var er = enemy.userData.rangeM;
-      var innerEdge = er * 0.34;   // closer than this -> our side is defeated (short-range vertical pen)
-      var outerEdge = er * 0.82;   // farther than this -> our deck is defeated (long-range plunging pen)
+    // IMMUNITY ZONE band vs the chosen THREAT gun (G1/G2): the range band where the enemy gun
+    // can defeat NEITHER our side (too far for flat pen) NOR our deck (too close for plunging pen).
+    //   inner edge = range beyond which enemy SIDE pen <= our side armour
+    //   outer edge = range beyond which enemy TOP (plunging) pen  >  our deck armour
+    // The threat gun's reach comes from the THREAT dropdown (immunityThreat), else the enemy on-map.
+    var er = immunityThreat.rangeM;
+    if (!(er > 0)) {
+      var enemy = units.filter(function (g) { return g.userData.side === "hostile" && g.userData.rangeM > 0; })[0];
+      er = enemy ? enemy.userData.rangeM : 0;
+    }
+    if (er > 0) {
+      var innerEdge = er * 0.34, outerEdge = er * 0.82;
       if (outerEdge > innerEdge) {
-        // tint the immune band with a faint amber filled ring (two arcs) centred on us.
+        // BOLD immune band: stronger amber fill + bold edge rings so it clearly reads as its own thing.
         var g2 = new THREE.RingGeometry(innerEdge, outerEdge, 96, 1);
         g2.rotateX(-Math.PI / 2);
         var mband = new THREE.Mesh(g2, new THREE.MeshBasicMaterial({
-          color: COL.range, transparent: true, opacity: 0.10, side: THREE.DoubleSide, depthWrite: false }));
+          color: 0x3ea0c8, transparent: true, opacity: 0.20, side: THREE.DoubleSide, depthWrite: false }));
         mband_place(mband, d);
         fireGroup.add(mband);
-        ring(innerEdge, COL.range, 0.35);
-        ring(outerEdge, COL.range, 0.35);
+        ring(innerEdge, 0x5fd6e6, 0.95);   // bold cyan inner edge
+        ring(outerEdge, 0x5fd6e6, 0.95);   // bold cyan outer edge
+        // label the band
+        var lbl = makeTagSprite("IMMUNE vs " + (immunityThreat.name || "ENEMY GUN"), 0x5fd6e6, Math.max(map.size_m[0], map.size_m[1]));
+        lbl.position.set(d.x, heightAt(d.x, d.z) + Math.max(120, (outerEdge) * 0.05), d.z + (innerEdge + outerEdge) / 2);
+        lbl.material.depthTest = false; lbl.renderOrder = 25; fireGroup.add(lbl);
       }
     }
   }
@@ -2782,6 +2800,19 @@
     document.getElementById("tSub").classList.toggle("on", show.suburbs);
     document.getElementById("tFogCull").classList.toggle("on", show.fogcull);
     document.getElementById("tFly").onclick = function () { setFly(!fly.on); };
+
+    // ---- THREAT GUN dropdown for the immunity band (G2) ----
+    var threatSel = document.getElementById("threatSel");
+    if (threatSel && !threatSel._built) {
+      threatSel._built = true;
+      THREAT_GUNS.forEach(function (tg, i) {
+        var o = document.createElement("option"); o.value = i; o.textContent = tg.name; threatSel.appendChild(o);
+      });
+      threatSel.onchange = function () {
+        immunityThreat = THREAT_GUNS[parseInt(threatSel.value, 10)] || THREAT_GUNS[0];
+        rebuildOverlays();
+      };
+    }
 
     // ---- COMBAT VIEW (L1) toggle ----
     var povBtn = document.getElementById("tPov");
