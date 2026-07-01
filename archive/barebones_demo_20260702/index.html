@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CITY BATTLE // SYDNEY TACTICAL MAP</title>
+<style>
+  /* ===== Evangelion-esque, MUTED (not glaring) ===== */
+  :root{
+    --bg:#0b0d0c; --panel:rgba(13,17,16,.84); --hair:rgba(120,140,130,.16);
+    --ink:#9eb0a5; --dim:#5d6d64; --amber:#b0822c; --orange:#9e5420;
+    --red:#9a3a33; --teal:#3e7a74;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+    font-family:"DejaVu Sans Mono",ui-monospace,Consolas,monospace;color:var(--ink)}
+  #c{position:fixed;inset:0}
+  /* AJ1: the unit + fire-solution panels are more OPAQUE for readability over the map */
+  #unit,#firesol,#cmd{background:rgba(11,14,12,.96)}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--hair);padding:10px 12px;
+    backdrop-filter:blur(2px)}
+  .hdr{color:var(--amber);font-size:11px;letter-spacing:.24em;font-weight:bold;margin-bottom:7px;text-transform:uppercase}
+  .row{font-size:11px;line-height:1.8;letter-spacing:.03em}
+  .dim{color:var(--dim)} .k{color:var(--teal)} .warn{color:var(--red)}
+  #top{top:0;left:0;right:0;height:30px;display:flex;align-items:center;gap:16px;padding:0 14px;border-width:0 0 1px}
+  #top .t{color:var(--orange);font-weight:bold;letter-spacing:.3em;font-size:13px}
+  #top .r{margin-left:auto;color:var(--dim);font-size:11px;letter-spacing:.12em}
+  #left{top:42px;left:10px;width:215px}
+  /* Right column: legend scrolls in the space above the conditions panel + ctrls so
+     nothing overlaps. #wx is collapsible (its header toggles the body) and is pinned just
+     above the ctrls row. */
+  #legend{top:42px;right:10px;width:194px;bottom:172px;overflow-y:auto}
+  /* R2: Conditions sits UNDER the compass rose (top-right compass column), not bottom-right. */
+  #wx{position:fixed;top:196px;right:212px;width:150px;max-height:40vh;overflow-y:auto;z-index:5}
+  #wx.collapsed{max-height:none}
+  #wx .hdr{cursor:pointer;display:flex;align-items:center;justify-content:space-between}
+  #wx .hdr .tw{font-size:10px;color:var(--dim);letter-spacing:.10em}
+  #wx.collapsed #wxBody,#wx.collapsed .wxFoot{display:none}
+  #unit{bottom:10px;left:10px;width:270px;display:none}
+  #ctrls{bottom:10px;right:10px;display:flex;gap:6px}
+  .btn{background:rgba(38,46,42,.55);border:1px solid var(--hair);color:var(--amber);
+    font-family:inherit;font-size:11px;letter-spacing:.08em;padding:7px 10px;cursor:pointer;text-transform:uppercase}
+  .btn:hover{background:rgba(58,70,64,.65);color:var(--ink)}
+  .btn.on{border-color:var(--amber);color:var(--ink)}
+  select{background:#10130f;color:var(--ink);border:1px solid var(--hair);font-family:inherit;font-size:11px;padding:5px;width:100%;margin-top:7px}
+  .leg{display:flex;align-items:center;gap:8px;font-size:10px;margin:4px 0;color:var(--dim)}
+  .sw{width:13px;height:4px}
+  .tg{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+  /* C3: compact ⓘ info icon with a hover/tap tooltip (replaces cluttered help paragraphs) */
+  .info{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;
+    border:1px solid var(--teal);border-radius:50%;color:var(--teal);font-size:9px;font-style:italic;
+    cursor:help;position:relative;margin-left:5px;vertical-align:middle;line-height:1}
+  .info:hover>.tip,.info:focus>.tip{display:block}
+  .info>.tip{display:none;position:absolute;left:18px;top:-4px;width:190px;z-index:40;
+    background:rgba(13,17,16,.96);border:1px solid var(--hair);padding:6px 8px;border-radius:2px;
+    font-size:9.5px;line-height:1.6;letter-spacing:.02em;color:var(--dim);font-style:normal;
+    box-shadow:0 2px 12px rgba(0,0,0,.5)}
+  .bar{height:5px;background:rgba(80,90,85,.22);margin:3px 0 7px;position:relative}
+  .bar>i{position:absolute;inset:0 auto 0 0;background:var(--teal)}
+  #scan{position:fixed;inset:0;pointer-events:none;z-index:4;opacity:.045;
+    background:repeating-linear-gradient(0deg,transparent 0 2px,#000 3px)}
+  .hint{position:fixed;bottom:14px;left:300px;right:230px;font-size:10px;color:var(--dim);text-align:center;line-height:1.7;letter-spacing:.04em;pointer-events:none}
+  #flyHint{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);display:none;
+    background:var(--panel);border:1px solid var(--amber);padding:8px 14px;z-index:6;
+    font-size:11px;letter-spacing:.10em;color:var(--ink);text-transform:uppercase;text-align:center;line-height:1.7}
+  #flyHint .k{color:var(--teal)} #flyHint .a{color:var(--amber);font-weight:bold;letter-spacing:.18em}
+  #load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:30;color:var(--amber);letter-spacing:.3em}
+  /* ===== COMMAND MODE ===== */
+  #cmd{top:42px;left:235px;width:236px;display:none}
+  #cmd .row{font-size:11px;line-height:1.65}
+  #cmd .big{color:var(--orange);font-weight:bold;letter-spacing:.14em;font-size:12px}
+  #cmd .ship{color:var(--amber);font-weight:bold}
+  #cmd select{margin-top:0}
+  .cmdrow{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
+  .cmdrow .btn{flex:1;padding:6px 4px;font-size:10px;min-width:46px}
+  .ftbtn{flex:1;padding:6px 3px;font-size:10px}
+  .ftbtn.move{border-color:#5fd6c6;color:#5fd6c6}
+  .ftbtn.hold{border-color:#e8a838;color:#e8a838}
+  .ftbtn.attack{border-color:#d75a52;color:#d75a52}
+  .ftbtn.on{background:rgba(80,90,85,.4);color:var(--ink)}
+  #playBtn.playing{border-color:#7fdf8c;color:#7fdf8c}
+  .obj{color:#7fe6a0}
+  #cmdHint{position:fixed;bottom:88px;left:10px;width:300px;font-size:9.5px;color:var(--dim);
+    line-height:1.7;letter-spacing:.02em;background:var(--panel);border:1px solid var(--hair);padding:7px 9px;display:none}
+  #cmdHint .a{color:var(--amber)} #cmdHint .m{color:#5fd6c6} #cmdHint .at{color:#d75a52}
+  /* ===== OBJECTIVE RESULT BANNER ===== */
+  #objBanner{position:fixed;top:34%;left:50%;transform:translate(-50%,-50%);z-index:20;display:none;
+    text-align:center;padding:18px 40px;background:rgba(13,17,16,.92);backdrop-filter:blur(3px);
+    pointer-events:none;clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)}
+  #objBanner .bt{font-size:34px;font-weight:bold;letter-spacing:.30em}
+  #objBanner .bs{font-size:12px;letter-spacing:.16em;color:var(--dim);margin-top:8px}
+  #objBanner.win{border:1px solid #7fe6a0;box-shadow:0 0 30px rgba(127,230,160,.18)}
+  #objBanner.win .bt{color:#7fe6a0}
+  #objBanner.lose{border:1px solid var(--red);box-shadow:0 0 30px rgba(154,58,51,.2)}
+  #objBanner.lose .bt{color:var(--red)}
+  /* ===== COMPASS HUD (top-right) ===== */
+  #compassHud{position:fixed;top:42px;right:212px;width:108px;z-index:5;
+    background:var(--panel);border:1px solid var(--hair);padding:6px 6px 4px;backdrop-filter:blur(2px);
+    display:flex;flex-direction:column;align-items:center}
+  #compassHud canvas{display:block}
+  #compassBrg{margin-top:3px;font-size:10px;letter-spacing:.10em;color:var(--amber);font-weight:bold}
+  /* ===== UNIT-PANEL FACING COMPASS ===== */
+  #uFaceRow{display:flex;align-items:center;gap:10px;margin-top:7px}
+  #uFaceCanvas{flex:0 0 auto}
+  #uFaceText{font-size:10px;line-height:1.7;letter-spacing:.04em}
+  #uFaceText .k{color:var(--teal)} #uFaceText .a{color:var(--amber);font-weight:bold}
+  #uFaceText .dim{color:var(--dim)}
+  /* ARMAMENT readout in the unit panel */
+  #uArm .gunrow{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:1.7;letter-spacing:.02em;
+    border-left:2px solid var(--amber);padding-left:7px;margin:3px 0}
+  #uArm .gunrow .gn{color:var(--ink);font-weight:bold}
+  #uArm .gunrow .cal{color:var(--amber)}
+  #uArm .gunrow .rng{color:var(--teal)}
+  #uArm .none{color:var(--dim);font-size:11px}
+  /* TARGETING COMPUTER: per-enemy firing-solution rows */
+  #tgtBody .trow{display:flex;align-items:baseline;gap:6px;font-size:10.5px;line-height:1.55;
+    border-left:2px solid var(--dim);padding-left:7px;margin:3px 0;cursor:pointer}
+  #tgtBody .trow:hover{background:rgba(120,140,130,0.08)}
+  #tgtBody .trow.firing{border-left-color:var(--red)}
+  #tgtBody .trow.masked{border-left-color:var(--amber)}
+  #tgtBody .trow.oor{border-left-color:#445;opacity:.6}
+  #tgtBody .tn{color:var(--ink);font-weight:bold;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tgtBody .trng{color:var(--teal)}
+  #tgtBody .tsol{font-size:9.5px;letter-spacing:.04em}
+  #tgtBody .tsol.fire{color:var(--red)} #tgtBody .tsol.mask{color:var(--amber)} #tgtBody .tsol.oor{color:var(--dim)}
+  #tgtBody .tbrg{color:var(--dim);font-size:9px}
+  #tgtBody .none{color:var(--dim);font-size:10.5px}
+  /* COMBAT LOG panel — bottom-left, just right of the unit inspect panel (no overlap) */
+  #clog{position:fixed;left:290px;bottom:10px;width:290px;max-height:120px;z-index:5;display:none;
+    overflow:hidden}
+  #clog .hdr{margin-bottom:5px}
+  /* mini log: newest at top (renderClog emits newest-first), old lines fade + expire */
+  #clogBody{font-size:10.5px;line-height:1.55;letter-spacing:.02em;max-height:92px;overflow:hidden}
+  #clogBody .ln,#clogFullBody .ln{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #clogBody .ln .a,#clogFullBody .ln .a{color:var(--teal)}
+  #clogBody .ln .h,#clogFullBody .ln .h{color:var(--red)}
+  #clogBody .ln .dim,#clogFullBody .ln .dim{color:#6a7a70}
+  #clogBody .ln.ko,#clogFullBody .ln.ko{color:var(--red);font-weight:bold}
+  #clogBody .ln.hit,#clogFullBody .ln.hit{color:var(--amber)}
+  #clogBody .ln.friend,#clogFullBody .ln.friend{color:#7fb6d6}
+  /* full scrollable combat log */
+  #clogFull{position:fixed;left:290px;bottom:140px;width:380px;max-height:56vh;z-index:8;
+    display:none;flex-direction:column;overflow:hidden}
+  #clogFullBody{font-size:10.5px;line-height:1.7;letter-spacing:.02em;overflow-y:auto;flex:1 1 auto}
+  /* L1: COMBAT POV inset — a border frame over the GL scissor viewport (bottom-right) */
+  #povView{position:fixed;right:14px;bottom:150px;z-index:6;pointer-events:none;
+    border:1px solid var(--amber);box-shadow:0 0 14px rgba(176,130,44,.25);
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%)}
+  #povLabel{position:absolute;top:0;left:0;right:0;background:rgba(13,17,16,.8);color:var(--amber);
+    font-size:9.5px;letter-spacing:.08em;padding:2px 6px;text-align:center;border-bottom:1px solid var(--hair)}
+  /* F2: FIRE SOLUTION maths panel (bottom-left, above the unit panel area / right of it) */
+  #firesol{left:290px;bottom:140px;width:250px;z-index:7}
+  #firesol .fsgrid{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-top:6px;font-size:10.5px}
+  #firesol .fsgrid > div{display:flex;flex-direction:column;line-height:1.5;
+    border-left:2px solid var(--amber);padding-left:6px}
+  #firesol .fsgrid .dim{font-size:8.5px;letter-spacing:.06em}
+  #firesol .fsgrid span:last-child{color:var(--ink);font-weight:bold}
+  #firesol .hdr .dim{color:var(--teal)}
+  /* auto-pause checklist */
+  #apList{margin-top:3px}
+  #apList.hidden{display:none}
+  .apc{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim);line-height:1.9;cursor:pointer}
+  .apc input{accent-color:var(--amber);width:12px;height:12px;margin:0}
+  /* lingering EVENT POPUPS (centre-top, fade out) */
+  #events{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:15;
+    display:flex;flex-direction:column;align-items:center;gap:5px;pointer-events:none;width:auto}
+  #events .ev{background:rgba(13,17,16,.9);border:1px solid var(--hair);padding:5px 14px;
+    font-size:12px;letter-spacing:.06em;color:var(--ink);white-space:nowrap;
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%);
+    animation:evfade 3.2s ease-out forwards}
+  #events .ev.warn{border-color:var(--red);color:#f0b6b0}
+  #events .ev.good{border-color:#7fe6a0;color:#bfeccd}
+  #events .ev.hit{border-color:var(--amber);color:#e9cf9a}
+  #events .ev .a{color:var(--teal)} #events .ev .h{color:var(--red)}
+  @keyframes evfade{0%{opacity:0;transform:translateY(-6px)}10%{opacity:1;transform:translateY(0)}
+    75%{opacity:1}100%{opacity:0;transform:translateY(-4px)}}
+  /* AC2: nicer custom scrollbars (webkit + firefox) */
+  *{scrollbar-width:thin;scrollbar-color:#3a4a42 transparent}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-track{background:rgba(20,26,22,.4)}
+  ::-webkit-scrollbar-thumb{background:#3a4a42;border-radius:4px;border:1px solid rgba(90,110,100,.3)}
+  ::-webkit-scrollbar-thumb:hover{background:#5a7062}
+  ::-webkit-scrollbar-corner{background:transparent}
+  /* R6: title dropdown menu */
+  #titleMenu{position:fixed;top:34px;left:14px;z-index:50;background:rgba(13,17,16,.97);
+    border:1px solid var(--hair);min-width:180px;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+  #titleMenu .mi{padding:7px 12px;font-size:11px;color:var(--ink);cursor:pointer;letter-spacing:.03em}
+  #titleMenu .mi:hover{background:rgba(120,140,130,.14);color:var(--amber)}
+  #titleMenu .msep{height:1px;background:var(--hair);margin:2px 0}
+  /* R6/AB2: hotkeys + options overlays */
+  #hotkeys,#optionsPanel{position:fixed;inset:0;z-index:60;background:rgba(6,8,7,.6);display:flex;align-items:center;justify-content:center}
+  .opt{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink);line-height:2;cursor:pointer}
+  .opt input{accent-color:var(--amber);width:13px;height:13px}
+  .hkgrid{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin-top:8px;font-size:11px;align-items:baseline}
+  .hkgrid b{color:var(--teal);font-weight:bold;white-space:nowrap}
+  .hkgrid span{color:var(--dim)}
+  /* S1: UNIT LIST panel (press U) — a compact spreadsheet, centre-ish, draggable */
+  #ulist{position:fixed;top:70px;left:50%;transform:translateX(-50%);width:560px;max-height:70vh;
+    z-index:18;overflow:hidden;display:flex;flex-direction:column}
+  #ulistBody{overflow-y:auto;font-size:10.5px}
+  #ulist table{width:100%;border-collapse:collapse}
+  #ulist th{text-align:left;color:var(--dim);font-weight:normal;font-size:9px;letter-spacing:.06em;
+    border-bottom:1px solid var(--hair);padding:3px 5px;position:sticky;top:0;background:var(--panel)}
+  #ulist td{padding:3px 5px;border-bottom:1px solid rgba(80,96,88,.15);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+  #ulist tr.urow{cursor:pointer}
+  #ulist tr.urow:hover{background:rgba(120,140,130,.10)}
+  #ulist tr.sel{background:rgba(245,197,24,.12)}
+  #ulist tr.foe td{color:#d99}
+  #ulist .sub{color:var(--dim);font-size:9px;letter-spacing:.06em;padding:5px 5px 2px}
+  #ulist .k{color:var(--teal)} #ulist .h{color:var(--red)} #ulist .am{color:var(--amber)}
+  /* R1: SPEED row now lives INSIDE the command panel, under PLAY */
+  #simctl{display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:5px}
+  #simctl .lab{color:var(--dim);font-size:9px;letter-spacing:.10em;margin-right:2px}
+  #simctl .spdbtn{padding:3px 5px;font-size:9.5px;flex:0 0 auto}
+  #simctl .spdbtn.on{border-color:var(--teal);color:var(--teal)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="scan"></div>
+<div id="events"></div>
+
+<!-- S1: UNIT LIST (press U) — spreadsheet of own units + spotted enemies -->
+<div class="panel" id="ulist" style="display:none">
+  <div class="hdr" id="ulistHdr" style="cursor:move;display:flex;justify-content:space-between">
+    <span>Order of Battle</span><span class="tw" id="ulistClose" style="font-size:10px;color:var(--dim);cursor:pointer">[ U ]</span>
+  </div>
+  <div id="ulistBody"></div>
+</div>
+
+<!-- HUD compass rose: fixed N-up dial; the needle shows which way the camera looks vs true north -->
+<div id="compassHud" title="Camera heading vs TRUE north">
+  <canvas id="compassCanvas" width="108" height="108"></canvas>
+  <div id="compassBrg">000&deg; N</div>
+</div>
+<div id="load">LOADING SYDNEY TACTICAL MAP&hellip;</div>
+
+<div class="panel" id="top">
+  <span class="t" id="titleMenuBtn" style="cursor:pointer" title="Menu">CITY BATTLE &#9662;</span><span class="dim" style="font-size:11px">// TACTICAL MAP</span>
+  <span id="cityName" class="k" style="font-size:11px"></span>
+  <span id="commsTop" class="k" style="font-size:11px;color:var(--teal);display:none;letter-spacing:.12em"></span>
+  <span class="r" id="status">SECTOR SCAN</span>
+</div>
+
+<!-- R6: title dropdown menu -->
+<div id="titleMenu" style="display:none">
+  <div class="mi" data-act="panels-show">Show all panels</div>
+  <div class="mi" data-act="panels-hide">Hide side panels</div>
+  <div class="mi" data-act="layout-reset">Reset panel layout</div>
+  <div class="msep"></div>
+  <div class="mi" data-act="unitlist">Unit list (U)</div>
+  <div class="mi" data-act="options">Gameplay options&hellip;</div>
+  <div class="mi" data-act="hotkeys">Hotkeys&hellip;</div>
+  <div class="msep"></div>
+  <div class="mi" data-act="wiki">Field Wiki</div>
+  <div class="mi" data-act="tutorial">Artillery tutorial</div>
+</div>
+
+<!-- AB2: gameplay options overlay -->
+<div id="optionsPanel" style="display:none">
+  <div class="panel" style="max-width:360px">
+    <div class="hdr">Gameplay Options <span class="tw" id="optClose" style="float:right;cursor:pointer;color:var(--dim)">[ close ]</span></div>
+    <label class="opt"><input type="checkbox" id="optSound"> Sound effects</label>
+    <label class="opt"><input type="checkbox" id="optAutopause" checked> Enable auto-pause</label>
+    <label class="opt"><input type="checkbox" id="optArcs" checked> Show fire trajectory arcs</label>
+    <label class="opt"><input type="checkbox" id="optPov" checked> Combat POV inset</label>
+    <label class="opt"><input type="checkbox" id="optNames" checked> Unit name labels</label>
+    <div class="row" style="margin-top:8px"><span class="dim" style="font-size:10px">DEFAULT SIM SPEED</span></div>
+    <input type="range" id="optSpeed" min="0.25" max="4" step="0.25" value="1" style="width:100%">
+    <div class="row dim" id="optSpeedRead" style="font-size:10px">1&times;</div>
+  </div>
+</div>
+
+<!-- R6: hotkeys overlay -->
+<div id="hotkeys" style="display:none">
+  <div class="panel" style="max-width:420px">
+    <div class="hdr">Hotkeys <span class="tw" id="hotkeysClose" style="float:right;cursor:pointer;color:var(--dim)">[ close ]</span></div>
+    <div class="hkgrid">
+      <b>SPACE</b><span>play / pause the clock</span>
+      <b>= / -</b><span>faster / slower sim speed</span>
+      <b>U</b><span>unit list (order of battle)</span>
+      <b>F</b><span>toggle fly camera</span>
+      <b>WASD / RE / Q</b><span>fly: move / up / down</span>
+      <b>WHEEL</b><span>zoom &middot; SHIFT+wheel = fly speed</span>
+      <b>&larr; &rarr; , .</b><span>cycle selected unit</span>
+      <b>1 / 2 / 3</b><span>order type: move / hold / attack</span>
+      <b>L-click</b><span>select unit</span>
+      <b>R-click</b><span>drop move/attack flag &middot; SHIFT+R = waypoint</span>
+      <b>CTRL/ALT-click</b><span>designate a fire mission</span>
+      <b>drag panel header</b><span>move panels (layout saved)</span>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="left">
+  <div class="hdr">Sector</div>
+  <div class="row"><span class="dim">MAP&nbsp;&nbsp;</span><span id="lCity" class="k"></span></div>
+  <div class="row"><span class="dim">EXTENT</span> <span id="lExt"></span></div>
+  <div class="row"><span class="dim">RELIEF</span> <span id="lRel"></span></div>
+  <div class="row"><span class="dim">STRUCT</span> <span id="lBld"></span></div>
+  <div class="row warn" style="margin-top:6px">CONDITIONS: INHOSPITABLE</div>
+  <div class="row dim">DOWNED CREW MUST BE RECOVERED</div>
+  <select id="citySel"></select>
+  <div class="hdr" style="margin-top:9px">Command Mode</div>
+  <div class="tg">
+    <button class="btn" id="tCmd">COMMAND MODE</button>
+  </div>
+  <select id="scenSel" style="display:none">
+    <option value="">— free deploy —</option>
+    <option value="skirmish">Skirmish (3v3 eliminate)</option>
+    <option value="harbour_crossing">Harbour Crossing</option>
+    <option value="ridge_defence">Ridge Defence</option>
+    <option value="convoy_escort">Convoy Escort</option>
+  </select>
+</div>
+
+<div class="panel" id="legend">
+  <div class="hdr">Overlays</div>
+  <div class="leg"><span class="sw" style="background:#6db48f;opacity:.85"></span> LINE OF SIGHT</div>
+  <div class="leg"><span class="sw" style="background:#e8a838"></span> GUN RANGE (max)</div>
+  <div class="leg"><span class="sw" style="background:#c87a3a"></span> EFFECTIVE RANGE</div>
+  <div class="leg"><span class="sw" style="background:#5fd6c6"></span> COMMS LINK</div>
+  <div class="leg"><span class="sw" style="background:#3e7a74"></span> FRIENDLY CRAB</div>
+  <div class="leg"><span class="sw" style="background:#9a3a33"></span> HOSTILE CRAB</div>
+  <div class="leg"><span class="sw" style="background:#7a6a3a"></span> CIVILIAN SCAVENGER</div>
+  <div class="leg"><span class="sw" style="background:#9fc6dd"></span> WIND VECTOR</div>
+  <div class="hdr" style="margin-top:9px">View Mode</div>
+  <div class="tg">
+    <button class="btn on" id="vShaded">STANDARD SHADED</button>
+    <button class="btn" id="vElev">COLOURED ELEVATION</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Trafficability</div>
+  <div class="tg">
+    <button class="btn" id="tSlope">SLOPE / GRADIENT</button>
+  </div>
+  <div id="slopeLeg" style="display:none">
+    <div class="leg"><span class="sw" style="background:#6fae6a"></span> GENTLE &middot; full speed</div>
+    <div class="leg"><span class="sw" style="background:#c8a23a"></span> MODERATE &middot; slowed</div>
+    <div class="leg"><span class="sw" style="background:#b56a2a"></span> STEEP &middot; very slow</div>
+    <div class="leg"><span class="sw" style="background:#9a3a33"></span> CLIFF &middot; impassable
+      <span class="info" tabindex="0">i<span class="tip">STEEP terrain slows crabs; CLIFFS are impassable &mdash; route around them.</span></span></div>
+  </div>
+  <div class="hdr" style="margin-top:9px">Toggles</div>
+  <div class="tg">
+    <button class="btn on" id="tLOS">LINE OF SIGHT</button>
+    <button class="btn on" id="tRange">GUN RANGE</button>
+    <button class="btn on" id="tBld">BUILDINGS</button>
+    <button class="btn on" id="tRoads">ROADS</button>
+    <button class="btn" id="tWire">CONTOUR WIRE</button>
+    <button class="btn" id="tSub" title="Cycle: OFF / borders / borders+territory / all / all+names">SUBURBS: BORDERS</button>
+    <button class="btn" id="tFogCull">FOG CULL</button>
+    <button class="btn on" id="tMarkers" title="Unit markers: FULL / SMALL / OFF">MARKERS: FULL</button>
+    <button class="btn on" id="tNames" title="Show/hide unit name labels">UNIT NAMES</button>
+    <input type="range" id="nameSize" min="0.5" max="2" step="0.1" value="1" title="Name label size" style="width:100%">
+
+    <button class="btn" id="tThreat" title="Threat band vs an expected enemy gun (red = can kill you)">THREAT BAND</button>
+    <select id="threatSel2" style="margin-top:3px;font-size:10px"></select>
+  </div>
+  <div class="hdr" style="margin-top:9px">Command &amp; Control</div>
+  <div class="tg">
+    <button class="btn" id="tComms">COMMS NET</button>
+    <button class="btn" id="tDead">DEAD ZONES</button>
+    <button class="btn" id="tShadeRange">SHADE OUT OF RANGE</button>
+    <button class="btn" id="tNetLos">NET LINE OF SIGHT</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Fire / LOS Preview<span class="info" tabindex="0">i<span class="tip">FROM ARRIVAL previews the selected crab's range &amp; LOS as if it had already reached its MOVE flag.</span></span></div>
+  <div class="tg" style="flex-direction:row;gap:4px">
+    <button class="btn on" id="tPrevCur" style="flex:1;padding:7px 4px">FROM CURRENT</button>
+    <button class="btn" id="tPrevArr" style="flex:1;padding:7px 4px">FROM ARRIVAL</button>
+  </div>
+  <div id="deadLeg" style="display:none">
+    <div class="leg"><span class="sw" style="background:#7fdf8c"></span> CAN HIT (direct fire)</div>
+    <div class="leg"><span class="sw" style="background:#d75a52"></span> DEAD ZONE (masked)</div>
+    <div class="leg"><span class="sw" style="background:#5d6d64"></span> OUT OF RANGE
+      <span class="info" tabindex="0">i<span class="tip">FIRE PICTURE for the selected crab: flat fire cannot reach the red pockets hiding behind crests within gun range.</span></span></div>
+  </div>
+  <div id="commsLeg" style="display:none">
+    <div class="leg"><span class="sw" style="background:#5fd6c6"></span> COMMS LINK (LOS)</div>
+    <div class="leg"><span class="sw" style="background:#9a3a33"></span> OFF NET &middot; no contact
+      <span class="info" tabindex="0">i<span class="tip">Tight-beam laser comms need line of sight. A crab behind a ridge falls off the net &mdash; no orders, no live intel.</span></span></div>
+    <div class="row" style="margin-top:5px"><span class="dim">COMMS</span> <span id="commsStat" class="k">--</span></div>
+  </div>
+  <div class="hdr" style="margin-top:9px">Weather</div>
+  <div class="tg">
+    <button class="btn" id="tWind">WIND FIELD</button>
+    <button class="btn" id="tRain">PRECIP</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Fire Analysis</div>
+  <div class="tg">
+    <button class="btn" id="tFire">FIRE ANALYSIS</button>
+  </div>
+  <div class="tg" id="fireTraj" style="display:none;flex-direction:row;gap:4px;margin-top:5px">
+    <button class="btn fbt on" id="fDirect" style="flex:1;padding:7px 4px" title="Flat, needs line of sight. Large dead space behind crests.">DIRECT</button>
+    <button class="btn fbt" id="fIndirect" style="flex:1;padding:7px 4px" title="Arced howitzer, needs a spotter. Smaller dead space, full range.">INDIRECT</button>
+    <button class="btn fbt" id="fMortar" style="flex:1;padding:7px 4px" title="Steep lob. Minimal dead space (drops into defilade) but much shorter range.">HIGH-ANGLE</button>
+  </div>
+  <div id="fireLeg" style="display:none">
+    <div class="leg"><span class="sw" style="background:#5d9a6a"></span> CAN HIT (in arc)</div>
+    <div class="leg"><span class="sw" style="background:#9a3a33"></span> DEAD SPACE (cannot)</div>
+    <div class="leg"><span class="sw" style="background:#5d6d64"></span> OUT OF RANGE</div>
+    <div class="leg"><span class="sw" style="background:#5fd6e6"></span> IMMUNITY BAND
+      <span class="info" tabindex="0">i<span class="tip">The range band where the chosen THREAT gun defeats neither your side (too far for flat pen) nor your deck (too close for plunging pen). Pick the expected enemy gun below.</span></span></div>
+    <div class="row" style="margin-top:5px"><span class="dim" style="font-size:9px">THREAT GUN</span></div>
+    <select id="threatSel" style="margin-top:2px;font-size:10px"></select>
+  </div>
+  <div class="hdr" style="margin-top:9px">Camera</div>
+  <div class="tg">
+    <button class="btn" id="tFly">FLY CAM &middot; F</button>
+    <button class="btn on" id="tPov">COMBAT VIEW</button>
+  </div>
+</div>
+
+<div class="panel" id="fire" style="top:42px;left:235px;width:212px;display:none">
+  <div class="hdr">Fire Analysis</div>
+  <div class="row"><span class="dim">UNIT&nbsp;</span> <span id="fUnit" class="k">--</span></div>
+  <div class="row"><span class="dim">TRAJ&nbsp;</span> <span id="fMode" class="k">DIRECT</span></div>
+  <div class="row"><span class="dim">REACH</span> <span id="fReach">--</span></div>
+  <div class="row dim" style="margin-top:5px">DEAD SPACE (of in-range terrain)</div>
+  <div class="bar"><i id="fDeadBar" style="background:var(--red)"></i></div>
+  <div class="row"><span id="fDeadPct" class="warn">--</span> <span class="dim">unhittable</span></div>
+  <div class="row dim" style="margin-top:6px" id="fHint">Behind crests = dead space. Flat fire leaves lots; mortar plunges into it.</div>
+  <div class="hdr" style="margin-top:9px">Angle Of Fall</div>
+  <div class="row" id="fAofRow"><span id="fAof" class="k">--</span></div>
+  <div class="row dim" id="fAofNote" style="margin-top:3px">select / target an enemy crab</div>
+</div>
+
+<div class="panel" id="cmd">
+  <div class="hdr">Command &amp; Control</div>
+  <div class="row"><span class="dim">SCENARIO</span> <span id="cScen" class="big">FREE DEPLOY</span></div>
+  <div class="row"><span class="dim">FLAGSHIP&nbsp;</span> <span id="cFlag" class="ship">—</span></div>
+  <div class="row"><span class="dim">NET&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <span id="cNet" class="k">—</span></div>
+  <div class="row" id="cFlagWarnRow" style="display:none"><span class="warn" id="cFlagWarn">FLAGSHIP OUT OF CONTACT</span></div>
+  <div class="row"><span class="dim">OBJECTIVE</span> <span id="cObj" class="obj">—</span></div>
+  <div class="row"><span class="dim">SIM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> <span id="cSim" class="warn">PAUSED</span></div>
+  <div class="cmdrow">
+    <button class="btn" id="playBtn" style="flex:1">&#9654; PLAY</button>
+  </div>
+  <!-- R1: speed controls live here, right by PLAY -->
+  <div id="simctl">
+    <span class="lab">SPEED</span>
+    <button class="btn spdbtn" id="spdH" data-s="0.5">&frac12;&times;</button>
+    <button class="btn spdbtn on" id="spd1" data-s="1">1&times;</button>
+    <button class="btn spdbtn" id="spd2" data-s="2">2&times;</button>
+    <button class="btn spdbtn" id="spd3" data-s="3">3&times;</button>
+    <button class="btn spdbtn" id="spd4" data-s="4">4&times;</button>
+    <button class="btn spdbtn" id="spd6" data-s="6">6&times;</button>
+    <button class="btn spdbtn" id="spd8" data-s="8">8&times;</button>
+    <span id="spdRead" class="lab" style="color:var(--amber);margin-left:auto">1&times;</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+    <input type="range" id="spdSlider" min="0.25" max="8" step="0.25" value="1"
+      title="Sim speed ( = / - keys )" style="flex:1;vertical-align:middle">
+    <button class="btn" id="tSound" style="flex:0 0 auto;padding:4px 8px">SOUND</button>
+  </div>
+  <div class="hdr" style="margin-top:8px;font-size:10px">Auto-Pause On
+    <span class="info" tabindex="0">i<span class="tip">The clock auto-pauses when a ticked event happens, so you can react. SPACE resumes.</span></span>
+    <span id="apToggle" class="tw" style="font-size:9px;color:var(--dim);letter-spacing:.08em;float:right;cursor:pointer">[ hide ]</span>
+  </div>
+  <div id="apList">
+    <label class="apc"><input type="checkbox" id="apSighted" checked> first enemy sighted</label>
+    <label class="apc"><input type="checkbox" id="apFiredOn" checked> fired on by enemy</label>
+    <label class="apc"><input type="checkbox" id="apFiredAt"> we open fire</label>
+    <label class="apc"><input type="checkbox" id="apHitEnemy"> we hit an enemy</label>
+    <label class="apc"><input type="checkbox" id="apKO" checked> a unit is knocked out</label>
+    <label class="apc"><input type="checkbox" id="apHitAlly" checked> friendly fire (hit ally)</label>
+  </div>
+  <div class="hdr" style="margin-top:9px">Order Type</div>
+  <div class="cmdrow" id="ftRow">
+    <button class="btn ftbtn move on" id="ftMove">MOVE</button>
+    <button class="btn ftbtn hold" id="ftHold">HOLD</button>
+    <button class="btn ftbtn attack" id="ftAttack">ATTACK</button>
+  </div>
+  <div class="hdr" style="margin-top:9px">Selected Unit</div>
+  <div class="row"><span class="dim">UNIT</span> <span id="cSelName" class="k">— none —</span></div>
+  <div class="cmdrow">
+    <button class="btn" id="cFlagshipBtn">SET FLAGSHIP</button>
+    <button class="btn" id="cBestBtn">BEST POSITION</button>
+  </div>
+  <div class="cmdrow">
+    <button class="btn" id="cClearBtn">CLEAR ORDERS</button>
+    <button class="btn" id="cAllBtn">SELECT ALL</button>
+  </div>
+  <div class="row dim" style="margin-top:6px;font-size:9px;line-height:1.5">
+    L-CLICK select &middot; R-CLICK = drop flag/move &middot; SHIFT+R = waypoint
+  </div>
+</div>
+
+<div class="panel" id="wx">
+  <div class="hdr" id="wxHdr"><span>Conditions</span><span class="tw" id="wxToggle">[ HIDE ]</span></div>
+  <div id="wxBody"><div class="row dim">NO WEATHER DATA</div></div>
+  <div class="row dim wxFoot" style="margin-top:5px;font-size:9px;letter-spacing:.04em">PRE-BATTLE FORECAST &middot; OPEN-METEO</div>
+</div>
+
+<div class="panel" id="unit">
+  <div id="uHead" style="display:flex;gap:9px;align-items:flex-start">
+    <div id="uPortraitWrap" style="flex:0 0 auto;width:74px;height:60px;border:1px solid var(--hair);position:relative;background:#0c0f0d">
+      <!-- J1: live mini-render of the selected crab is drawn here via a scissored GL viewport -->
+    </div>
+    <div style="flex:1 1 auto;min-width:0">
+      <div class="hdr" id="uName" style="margin:0">CRAB</div>
+      <div class="row"><span class="dim">CLASS</span> <span id="uClass" class="k"></span></div>
+      <div class="row"><span class="dim">IDENT</span> <span id="uIdent"></span></div>
+    </div>
+  </div>
+  <div class="row dim" style="margin-top:5px">STRUCT</div><div class="bar"><i id="uStruct"></i></div>
+  <div class="hdr" style="margin-top:7px;font-size:10px">Armament</div>
+  <div id="uArm"></div>
+  <div class="row"><span class="dim">RANGE</span> <span id="uRange"></span></div>
+  <div class="row"><span class="dim">COMMS</span> <span id="uComms" class="k">--</span></div>
+
+  <!-- AJ3/AJ4: ORDERS on the unit panel — movement (with speed) + fire orders -->
+  <div class="hdr" style="margin-top:8px;font-size:10px">Movement</div>
+  <div class="row"><span class="dim">ORDER</span> <span id="uMoveOrder" class="a">STATIONARY</span></div>
+  <div class="row"><span class="dim">AT DEST</span> <span id="uDestBrg" class="k">—</span></div>
+  <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
+    <span class="dim" style="font-size:9px">SPEED</span>
+    <input type="range" id="uSpeed" min="30" max="130" step="5" value="100" style="flex:1">
+    <span id="uSpeedRead" class="k" style="font-size:10px;min-width:34px">100%</span>
+  </div>
+  <div class="hdr" style="margin-top:8px;font-size:10px">Fire Orders</div>
+  <div class="cmdrow" style="margin-top:2px">
+    <button class="btn on" id="uFireWill" style="flex:1;padding:5px 4px;font-size:10px">FIRE AT WILL</button>
+    <button class="btn" id="uHoldFire" style="flex:1;padding:5px 4px;font-size:10px">HOLD FIRE</button>
+  </div>
+  <div id="uFaceRow">
+    <canvas id="uFaceCanvas" width="64" height="64"></canvas>
+    <div id="uFaceText">
+      <div><span class="dim">FACING</span> <span id="uFacing" class="a">---</span></div>
+      <div id="uTgtRow" style="display:none"><span class="dim">TGT BRG</span> <span id="uTgtBrg" class="k">---</span></div>
+    </div>
+  </div>
+  <div id="uDeadRow" style="display:none;margin-top:5px">
+    <div class="row"><span class="dim">DEAD ZONE</span> <span id="uDeadPct" class="warn">--</span> <span class="dim">of range masked</span></div>
+    <div class="bar"><i id="uDeadBar" style="background:var(--red)"></i></div>
+  </div>
+  <!-- TARGETING COMPUTER: enemy crabs in fire-control, with the firing solution this gun has on each -->
+  <div id="uTgtComp" style="display:none">
+    <div class="hdr" style="margin-top:8px;font-size:10px">Targeting Computer
+      <span id="tgtMode" class="dim" style="font-weight:normal;letter-spacing:.06em"></span></div>
+    <div id="tgtBody"></div>
+  </div>
+  <div class="row dim" id="uNote" style="margin-top:5px"></div>
+</div>
+
+<!-- L1: COMBAT POV inset frame (the render is drawn by the GL scissor viewport underneath) -->
+<div id="povView" style="display:none">
+  <div id="povLabel">—</div>
+</div>
+
+<!-- F2: FIRE SOLUTION maths panel — appears when a gun is selected/engaging -->
+<div class="panel" id="firesol" style="display:none">
+  <div class="hdr">Fire Solution <span id="fsMode" class="dim" style="font-size:10px;letter-spacing:.08em"></span></div>
+  <div class="row" id="fsGunRow"><span class="dim">GUN</span> <select id="fsGunSel" style="width:auto;margin:0 0 0 6px;font-size:10px;display:inline-block"></select></div>
+  <div class="row"><span class="dim">TARGET</span> <span id="fsTgt" class="k">—</span></div>
+  <div class="fsgrid">
+    <div><span class="dim">RANGE</span><span id="fsRange">—</span></div>
+    <div><span class="dim">MUZZLE VEL</span><span id="fsVel">—</span></div>
+    <div><span class="dim">ELEVATION (QE)</span><span id="fsElev">—</span></div>
+    <div><span class="dim">ANGLE OF FALL</span><span id="fsFall">—</span></div>
+    <div><span class="dim">TIME OF FLIGHT</span><span id="fsTof">—</span></div>
+    <div><span class="dim">APEX</span><span id="fsApex">—</span></div>
+    <div><span class="dim">CHARGE</span><span id="fsCharge">—</span></div>
+    <div><span class="dim">HIT ZONE</span><span id="fsZone">—</span></div>
+  </div>
+  <div class="row dim" id="fsHint" style="margin-top:5px;font-size:9px;line-height:1.5"></div>
+</div>
+
+<div class="panel" id="clog">
+  <div class="hdr" id="clogHdr" style="cursor:pointer;display:flex;justify-content:space-between">
+    <span>Combat Log</span><span class="tw" id="clogExpand" style="font-size:10px;color:var(--dim);letter-spacing:.1em">[ LOG ]</span>
+  </div>
+  <div id="clogBody"></div>
+</div>
+
+<div class="panel" id="clogFull" style="display:none">
+  <div class="hdr" id="clogFullHdr" style="cursor:pointer;display:flex;justify-content:space-between">
+    <span>Combat Log &mdash; Full</span><span class="tw" style="font-size:10px;color:var(--dim)">[ CLOSE ]</span>
+  </div>
+  <div id="clogFullBody"></div>
+</div>
+
+
+
+<div class="panel" id="ctrls">
+  <button class="btn" id="zin">+</button>
+  <button class="btn" id="zout">&minus;</button>
+  <button class="btn" id="rst">RESET</button>
+</div>
+<div class="hint"><span style="color:var(--amber)">FLY CAM</span> on by default &middot; <span style="color:var(--teal)">WASD</span> move &middot; <span style="color:var(--teal)">DRAG</span> look &middot; <span style="color:var(--amber)">F</span> = orbit &middot; CLICK a crab to inspect<br><span style="color:var(--amber)">, / .</span> cycle units &middot; <span style="color:var(--amber)">SHADE OUT OF RANGE</span> / <span style="color:var(--amber)">NET LOS</span> / <span style="color:var(--amber)">DEAD ZONES</span> overlays<br>map review viewer &mdash; shared data with the Unity game</div>
+
+<div id="cmdHint">
+  <span class="a">COMMAND</span> &middot; L-CLICK select unit &middot; <span class="m">R-CLICK</span> drop flag &amp; move &middot; <span class="m">SHIFT+R</span> waypoint chain<br>
+  <span class="m">1</span>=MOVE <span class="a">2</span>=HOLD <span class="at">3</span>=ATTACK &middot; SET FLAGSHIP &middot; BEST POSITION &middot; SPACE = play/pause &middot; R-CLICK a flag to clear it
+</div>
+
+<div id="flyHint">
+  <span class="a">FLY CAM ACTIVE</span> &nbsp;&middot;&nbsp;
+  <span class="k">W/S</span> fwd/back &middot; <span class="k">A/D</span> strafe &middot;
+  <span class="k">R/E</span> up &middot; <span class="k">Q</span> down &middot;
+  <span class="k">DRAG</span> look &middot; <span class="k">WHEEL</span> zoom &middot; <span class="k">SHIFT+WHEEL</span> speed
+  <br><span class="dim" style="color:var(--dim)">press</span> <span class="a">F</span> <span class="dim" style="color:var(--dim)">again or</span> <span class="a">ESC</span> <span class="dim" style="color:var(--dim)">to return to orbit</span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>

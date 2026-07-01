@@ -28,3 +28,13 @@ Keep known-good deploy points so we can revert the LIVE demo fast if a change br
 - **If we must revert now:** `cd ~/projects/qalarc.ai && git checkout 18d8ca5102 -- projects/city-battle/ && git commit && push`.
 
 *Last updated: 2026-07-01*
+
+## 2026-07-01 — MILESTONE: "barebones demo v1"
+- Git tag: **barebones-demo-v1** (game repo). Filesystem snapshot: `archive/barebones_demo_<date>/`.
+- This is the "barebones playable tactical-map demo ready" milestone. Everything after this is
+  "more substantial changes" per the user.
+- Contents: 3v3 skirmish default + command-mode-on, gun-aware fire solutions (types/charges/multi-
+  gun/CANNOT REACH), unit-panel orders (move/speed/fire-at-will/hold-fire), flag removal, flagship
+  star, spotted-enemy actual-names (👁/✛/📡), field wiki + gameplay options, draggable panels,
+  2D portrait/POV (white-box glitch gone), true N-E-S-W map, compact 7.35MB JSON with progress load.
+- To restore: `git checkout barebones-demo-v1 -- citymap/web/ citymap/data/sydney.citymap.json`.
