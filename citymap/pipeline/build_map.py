@@ -105,6 +105,36 @@ def main():
                 roads_out.append({"path": path, "kind": r["kind"]})
         print(f"[build_map] embedded {len(roads_out)} roads")
 
+    # --- suburb boundary polygons (optional) ---
+    suburbs_out = []
+    sraw_fn = os.path.join(CACHE, f"{city}_suburbs_raw.json")
+    if os.path.exists(sraw_fn):
+        sraw = json.load(open(sraw_fn))
+        for s in sraw:
+            rings_m = []
+            cx = cz = 0.0
+            n = 0
+            for ring in s.get("rings", []):
+                rm = []
+                for lon, lat in ring:
+                    x_m = (lon - west) * mpd_lon
+                    z_m = (lat - south) * mpd_lat
+                    rm.append([round(x_m, 1), round(z_m, 1)])
+                    cx += x_m
+                    cz += z_m
+                    n += 1
+                if len(rm) >= 4:
+                    rings_m.append(rm)
+            if rings_m and n:
+                suburbs_out.append(
+                    {
+                        "name": s["name"],
+                        "rings": rings_m,
+                        "centroid": [round(cx / n, 1), round(cz / n, 1)],
+                    }
+                )
+        print(f"[build_map] embedded {len(suburbs_out)} suburb boundaries")
+
     water_level = info.get("water_level_m", 0.0)
     water_frac = float((heights <= water_level).mean())
     out = {
@@ -126,6 +156,7 @@ def main():
         },
         "buildings": buildings_out,
         "roads": roads_out,
+        "suburbs": suburbs_out,
     }
 
     # --- weather (optional) ---

@@ -146,6 +146,14 @@
   draped on terrain). Possibly the toggle was off, or the user wants them ON by default / more
   visible. ACTION: verify roads render on the live demo, consider default-on + heavier styling.
 
+## P. Buildings — texturing (backlog / later)
+
+- **[ ] P1 — Basic BUILDING TEXTURES.** Apply 3 simple textures to building meshes depending on
+  building HEIGHT (low / mid / high tiers, matching the existing lowC/midC/hiC colour bands):
+  e.g. low = warehouse/flat roof, mid = mid-rise windows, high = tower glass/curtain-wall. Keep it
+  cheap (a small tiled canvas/procedural texture per tier, UV'd on the wall quads in addBuilding).
+  Currently buildings are flat vertex-coloured by height only.
+
 ## N. Future / backlog (explicitly "potential in the future")
 
 - **[L] N1 — UNMANNED COMMS TOWERS that can be destroyed** — static relay structures that extend

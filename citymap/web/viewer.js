@@ -772,6 +772,52 @@
     var NEON = [0x35e0d0, 0xe65cc8];
 
     var placed = 0;
+
+    // B1: REAL BOUNDARY POLYGONS. If the map carries suburb boundary rings, draw them as neon
+    // OUTLINE loops draped on the terrain (their true admin borders), with the name at the
+    // centroid. Falls back to the hardcoded centroid rings only if no polygons are present.
+    if (map.suburbs && map.suburbs.length) {
+      for (var si = 0; si < map.suburbs.length; si++) {
+        var sub = map.suburbs[si];
+        var neonC = NEON[placed % 2];
+        var drewRing = false;
+        for (var ri = 0; ri < sub.rings.length; ri++) {
+          var ring = sub.rings[ri];
+          var pts = [];
+          for (var pi = 0; pi < ring.length; pi++) {
+            var rx = MX(ring[pi][0]), rz = ring[pi][1];               // A1 east-mirror
+            if (rx < -200 || rx > W + 200 || rz < -200 || rz > L + 200) continue;
+            pts.push(new THREE.Vector3(clamp(rx, 0, W), heightAt(clamp(rx, 0, W), clamp(rz, 0, L)) + 8, clamp(rz, 0, L)));
+          }
+          if (pts.length < 3) continue;
+          // bold neon boundary: a bright thin loop + a faint wider glow underlay
+          var geo = new THREE.BufferGeometry().setFromPoints(pts);
+          suburbGroup.add(new THREE.Line(geo, new THREE.LineBasicMaterial({
+            color: neonC, transparent: true, opacity: 0.85, depthTest: false })));
+          var geo2 = new THREE.BufferGeometry().setFromPoints(pts.map(function (p) {
+            return new THREE.Vector3(p.x, p.y + span * 0.001, p.z); }));
+          suburbGroup.add(new THREE.Line(geo2, new THREE.LineBasicMaterial({
+            color: neonC, transparent: true, opacity: 0.28, depthTest: false })));
+          drewRing = true;
+        }
+        if (!drewRing) continue;
+        // centroid for the name label + objective marker (mirror the stored centroid X)
+        var cx = MX(sub.centroid ? sub.centroid[0] : ringMidX(sub));
+        var cz = sub.centroid ? sub.centroid[1] : 0;
+        cx = clamp(cx, 0, W); cz = clamp(cz, 0, L);
+        var cgy = heightAt(cx, cz);
+        var spr = makeLabelSprite(sub.name, span);
+        spr.position.set(cx, cgy + lift, cz);
+        suburbNameGroup.add(spr);
+        suburbMarkers.push({ name: sub.name, x: cx, z: cz, ringR: ringR,
+          ring: null, glow: null, glowMat: null, ringMat: null, baseCol: neonC, objState: null });
+        placed++;
+      }
+      suburbGroup.userData = { placed: placed };
+      return;
+    }
+
+    // fallback: hardcoded centroid rings (older maps without boundary polygons)
     for (var i = 0; i < SUBURBS.length; i++) {
       var s = SUBURBS[i];
       var x = MX((s[1] - west) * mPerLon); // east metres -> MIRRORED world-X (A1)
@@ -783,14 +829,9 @@
       var mk = makeSuburbMarker(x, gy, z, ringR, neon);
       suburbGroup.add(mk.group);
 
-      // big NAME label (own group / toggle, default off)
-      var spr = makeLabelSprite(s[0], span);
-      spr.position.set(x, gy + lift, z);
-      suburbNameGroup.add(spr);
-      var tg = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(x, gy + lift, z), new THREE.Vector3(x, gy + 6, z)]);
-      suburbNameGroup.add(new THREE.Line(tg, new THREE.LineBasicMaterial({
-        color: 0x6d8378, transparent: true, opacity: 0.30 })));
+      var spr2 = makeLabelSprite(s[0], span);
+      spr2.position.set(x, gy + lift, z);
+      suburbNameGroup.add(spr2);
 
       suburbMarkers.push({ name: s[0], x: x, z: z, ringR: ringR,
         ring: mk.ring, glow: mk.glow, glowMat: mk.glowMat, ringMat: mk.ringMat,
@@ -798,6 +839,9 @@
       placed++;
     }
     suburbGroup.userData = { placed: placed };
+  }
+  function ringMidX(sub) {
+    var r = sub.rings[0]; var sx = 0; for (var i = 0; i < r.length; i++) sx += r[i][0]; return sx / r.length;
   }
 
   // Build one neon suburb marker: a thin glowing ring + a soft inner glow disc + a small
@@ -834,9 +878,11 @@
     if (!m) return null;
     m.objState = state;
     var col = state === "hold" ? 0xe8a838 : state === "protect" ? 0x7fe6a0 : m.baseCol;
-    m.ringMat.color.setHex(col); m.glowMat.color.setHex(col);
-    m.ringMat.opacity = state ? 1.0 : 0.95;
-    m.glowMat.opacity = state ? 0.30 : 0.16;
+    if (m.ringMat) {   // centroid-ring markers; polygon-boundary markers have no ring mats
+      m.ringMat.color.setHex(col); m.glowMat.color.setHex(col);
+      m.ringMat.opacity = state ? 1.0 : 0.95;
+      m.glowMat.opacity = state ? 0.30 : 0.16;
+    }
     return m;
   }
 
