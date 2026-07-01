@@ -27,8 +27,10 @@
   /* Right column: legend scrolls in the space above the conditions panel + ctrls so
      nothing overlaps. #wx is collapsible (its header toggles the body) and is pinned just
      above the ctrls row. */
-  #legend{top:42px;right:10px;width:194px;bottom:118px;overflow-y:auto}
-  #wx{bottom:50px;right:10px;width:194px;max-height:42vh;overflow-y:auto}
+  #legend{top:42px;right:10px;width:194px;bottom:172px;overflow-y:auto}
+  /* Conditions pinned to the bottom-right, height-capped so it NEVER rises into #legend above it. */
+  #wx{bottom:50px;right:10px;width:194px;max-height:112px;overflow-y:auto}
+  #wx.collapsed{max-height:none}
   #wx .hdr{cursor:pointer;display:flex;align-items:center;justify-content:space-between}
   #wx .hdr .tw{font-size:10px;color:var(--dim);letter-spacing:.10em}
   #wx.collapsed #wxBody,#wx.collapsed .wxFoot{display:none}
@@ -113,15 +115,21 @@
   #tgtBody .tbrg{color:var(--dim);font-size:9px}
   #tgtBody .none{color:var(--dim);font-size:10.5px}
   /* COMBAT LOG panel — bottom-left, just right of the unit inspect panel (no overlap) */
-  #clog{position:fixed;left:290px;bottom:10px;width:282px;max-height:180px;z-index:5;display:none;
+  #clog{position:fixed;left:290px;bottom:10px;width:290px;max-height:120px;z-index:5;display:none;
     overflow:hidden}
   #clog .hdr{margin-bottom:5px}
-  #clogBody{font-size:10.5px;line-height:1.6;letter-spacing:.02em;max-height:146px;overflow-y:auto;
-    display:flex;flex-direction:column-reverse}
-  #clogBody .ln{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  #clogBody .ln .a{color:var(--teal)} #clogBody .ln .h{color:var(--red)}
-  #clogBody .ln.ko{color:var(--red);font-weight:bold}
-  #clogBody .ln.hit{color:var(--amber)}
+  /* mini log: newest at top (renderClog emits newest-first), old lines fade + expire */
+  #clogBody{font-size:10.5px;line-height:1.55;letter-spacing:.02em;max-height:92px;overflow:hidden}
+  #clogBody .ln,#clogFullBody .ln{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #clogBody .ln .a,#clogFullBody .ln .a{color:var(--teal)}
+  #clogBody .ln .h,#clogFullBody .ln .h{color:var(--red)}
+  #clogBody .ln .dim,#clogFullBody .ln .dim{color:#6a7a70}
+  #clogBody .ln.ko,#clogFullBody .ln.ko{color:var(--red);font-weight:bold}
+  #clogBody .ln.hit,#clogFullBody .ln.hit{color:var(--amber)}
+  #clogBody .ln.friend,#clogFullBody .ln.friend{color:#7fb6d6}
+  /* full scrollable combat log */
+  #clogFull{position:fixed;left:290px;bottom:140px;width:360px;max-height:44vh;z-index:8;overflow:hidden}
+  #clogFullBody{font-size:10.5px;line-height:1.7;letter-spacing:.02em;max-height:calc(44vh - 34px);overflow-y:auto}
   /* SPEED + SOUND control row (bottom-centre, command mode) */
   #simctl{position:fixed;bottom:48px;left:50%;transform:translateX(-50%);z-index:6;display:none;
     gap:5px;align-items:center;flex-direction:row}
@@ -241,9 +249,9 @@
     <button class="btn" id="tFire">FIRE ANALYSIS</button>
   </div>
   <div class="tg" id="fireTraj" style="display:none;flex-direction:row;gap:4px;margin-top:5px">
-    <button class="btn fbt on" id="fDirect" style="flex:1;padding:7px 4px">DIRECT</button>
-    <button class="btn fbt" id="fOblique" style="flex:1;padding:7px 4px">OBLIQUE</button>
-    <button class="btn fbt" id="fMortar" style="flex:1;padding:7px 4px">MORTAR</button>
+    <button class="btn fbt on" id="fDirect" style="flex:1;padding:7px 4px" title="Flat, needs line of sight. Large dead space behind crests.">DIRECT</button>
+    <button class="btn fbt" id="fIndirect" style="flex:1;padding:7px 4px" title="Arced howitzer, needs a spotter. Smaller dead space, full range.">INDIRECT</button>
+    <button class="btn fbt" id="fMortar" style="flex:1;padding:7px 4px" title="Steep lob. Minimal dead space (drops into defilade) but much shorter range.">HIGH-ANGLE</button>
   </div>
   <div id="fireLeg" style="display:none">
     <div class="leg"><span class="sw" style="background:#5d9a6a"></span> CAN HIT (in arc)</div>
@@ -339,16 +347,31 @@
 </div>
 
 <div class="panel" id="clog">
-  <div class="hdr">Combat Log</div>
+  <div class="hdr" id="clogHdr" style="cursor:pointer;display:flex;justify-content:space-between">
+    <span>Combat Log</span><span class="tw" id="clogExpand" style="font-size:10px;color:var(--dim);letter-spacing:.1em">[ LOG ]</span>
+  </div>
   <div id="clogBody"></div>
+</div>
+
+<div class="panel" id="clogFull" style="display:none">
+  <div class="hdr" id="clogFullHdr" style="cursor:pointer;display:flex;justify-content:space-between">
+    <span>Combat Log &mdash; Full</span><span class="tw" style="font-size:10px;color:var(--dim)">[ CLOSE ]</span>
+  </div>
+  <div id="clogFullBody"></div>
 </div>
 
 <div id="simctl">
   <span class="lab">SPEED</span>
+  <button class="btn" id="spdH" data-s="0.5">&frac12;&times;</button>
   <button class="btn on" id="spd1" data-s="1">1&times;</button>
   <button class="btn" id="spd2" data-s="2">2&times;</button>
   <button class="btn" id="spd3" data-s="3">3&times;</button>
   <button class="btn" id="spd4" data-s="4">4&times;</button>
+  <button class="btn" id="spd6" data-s="6">6&times;</button>
+  <button class="btn" id="spd8" data-s="8">8&times;</button>
+  <input type="range" id="spdSlider" min="0.25" max="8" step="0.25" value="1"
+    title="Sim speed ( = / - keys )" style="width:92px;margin:0 6px;vertical-align:middle">
+  <span id="spdRead" class="lab" style="min-width:34px;color:var(--amber)">1&times;</span>
   <button class="btn" id="tSound" style="margin-left:8px">SOUND</button>
 </div>
 
@@ -368,7 +391,7 @@
   <span class="a">FLY CAM ACTIVE</span> &nbsp;&middot;&nbsp;
   <span class="k">W/S</span> fwd/back &middot; <span class="k">A/D</span> strafe &middot;
   <span class="k">R/E</span> up &middot; <span class="k">Q</span> down &middot;
-  <span class="k">DRAG</span> look &middot; <span class="k">SHIFT</span> boost &middot; <span class="k">WHEEL</span> speed
+  <span class="k">DRAG</span> look &middot; <span class="k">WHEEL</span> zoom &middot; <span class="k">SHIFT+WHEEL</span> speed
   <br><span class="dim" style="color:var(--dim)">press</span> <span class="a">F</span> <span class="dim" style="color:var(--dim)">again or</span> <span class="a">ESC</span> <span class="dim" style="color:var(--dim)">to return to orbit</span>
 </div>
 

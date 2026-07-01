@@ -128,8 +128,9 @@
   // trajectory mode: "direct" (flat, lots of dead space) | "oblique" (arced howitzer, less)
   //                  | "mortar" (near-vertical, almost none)
   var fireMode = "direct";
-  var fireQS = QS.get("fire");           // ?fire=direct|oblique|mortar force-enables for screenshots
-  if (fireQS === "direct" || fireQS === "oblique" || fireQS === "mortar") {
+  var fireQS = QS.get("fire");           // ?fire=direct|indirect|mortar (oblique accepted as alias)
+  if (fireQS === "oblique") fireQS = "indirect";
+  if (fireQS === "direct" || fireQS === "indirect" || fireQS === "mortar") {
     show.fire = true; fireMode = fireQS; show.los = false;   // fire shading replaces plain viewshed
   }
   var fireGroup = null;                   // overlay group for min/max + immunity rings
@@ -176,18 +177,44 @@
   var CLOG_MAX = 40;
   var audioCtx = null;         // lazily-created WebAudio context (only when SOUND is on)
 
-  // Append a line to the scrolling combat log panel. kind = "" | "hit" | "ko" for styling.
+  var CLOG_FULL_MAX = 300;        // full scrollable history keeps far more
+  var CLOG_MINI_SHOW = 6;         // mini panel shows only the last few
+  var CLOG_DECAY_S = 12;          // mini lines fade out after this many real seconds
+  var clogFull = [];              // full history (for the expandable panel)
+  var _clogDecayT = 0;            // throttle for mini-log time-decay re-render
+  // Append a line to the combat log. kind = "" | "hit" | "ko" | "friend" for styling.
   function combatLog(html, kind) {
-    var body = document.getElementById("clogBody");
-    if (!body) return;
-    clogLines.push({ html: html, kind: kind || "" });
+    var line = { html: html, kind: kind || "", t: (performance.now ? performance.now() : Date.now()) / 1000 };
+    clogLines.push(line);
     if (clogLines.length > CLOG_MAX) clogLines.shift();
-    // column-reverse layout: newest first visually, so render newest -> oldest
-    var out = "";
-    for (var i = clogLines.length - 1; i >= 0; i--) {
-      out += '<div class="ln ' + clogLines[i].kind + '">' + clogLines[i].html + "</div>";
+    clogFull.push(line);
+    if (clogFull.length > CLOG_FULL_MAX) clogFull.shift();
+    renderClog();
+  }
+  // Render both the MINI panel (recent, decaying) and the FULL scrollable panel (if open).
+  function renderClog() {
+    var now = (performance.now ? performance.now() : Date.now()) / 1000;
+    var mini = document.getElementById("clogBody");
+    if (mini) {
+      // newest first; only the last CLOG_MINI_SHOW lines, and drop lines older than the decay window
+      var out = "", shown = 0;
+      for (var i = clogLines.length - 1; i >= 0 && shown < CLOG_MINI_SHOW; i--) {
+        var age = now - (clogLines[i].t || now);
+        if (age > CLOG_DECAY_S) break;                       // older ones have decayed away
+        var fade = age > CLOG_DECAY_S * 0.5 ? (1 - (age - CLOG_DECAY_S * 0.5) / (CLOG_DECAY_S * 0.5)) : 1;
+        out += '<div class="ln ' + clogLines[i].kind + '" style="opacity:' + fade.toFixed(2) + '">' +
+               clogLines[i].html + "</div>";
+        shown++;
+      }
+      mini.innerHTML = out || '<div class="ln" style="opacity:.4">\u2014</div>';
     }
-    body.innerHTML = out;
+    var full = document.getElementById("clogFullBody");
+    if (full && document.getElementById("clogFull") && document.getElementById("clogFull").style.display !== "none") {
+      var fout = "";
+      for (var j = clogFull.length - 1; j >= 0; j--)
+        fout += '<div class="ln ' + clogFull[j].kind + '">' + clogFull[j].html + "</div>";
+      full.innerHTML = fout;
+    }
   }
 
   // Generate a short WebAudio "boom" (fire) or "thud" (impact). No asset files. Gated by soundOn.
@@ -377,11 +404,10 @@
     // ----- camera framing -----
     frameCamera();
 
-    // FREE/FLY CAM ON BY DEFAULT: enable fly so WASD moves immediately on load (item A).
+    // FREE/FLY CAM ON BY DEFAULT (all modes incl. scenarios) so WASD + wheel-zoom work immediately.
     // ?fly=0 keeps orbit-by-default (e.g. some screenshots want a fixed framing).
-    if (!cmd.forceScenario && !cmd.forcePlay && QS.get("fly") !== "0" && !flyBootDone) {
+    if (QS.get("fly") !== "0" && !flyBootDone) {
       flyBootDone = true;
-      // pull the camera back a touch and look down-forward so fly starts framed on the theatre
       setFly(true);
     }
 
@@ -1250,9 +1276,16 @@
 
   // Per-trajectory tuning.  min-range fraction = inner dead zone for high-angle lobbers.
   function trajParams(mode) {
-    if (mode === "mortar")  return { minFrac: 0.06, reachMul: 1.00, high: true,  arcGain: 1.10, label: "MORTAR / HIGH-ANGLE" };
-    if (mode === "oblique") return { minFrac: 0.02, reachMul: 0.96, high: true,  arcGain: 0.07, label: "OBLIQUE / INDIRECT" };
-    return                         { minFrac: 0.00, reachMul: 0.90, high: false, arcGain: 0.00, label: "DIRECT / FLAT" };
+    // Doctrinal trajectories (ref docs/wiki/ref/ARTILLERY_DOCTRINE.md §1–2):
+    //   DIRECT    flat, needs LOS, LARGE dead space behind crests.
+    //   INDIRECT  arced howitzer, needs a spotter, SMALLER dead space, full range.
+    //   HIGH-ANGLE/MORTAR  steep near-vertical lob: MINIMAL dead space (drops into defilade)
+    //                      but MUCH SHORTER max range (E2) — a short-reach specialist.
+    if (mode === "mortar" || mode === "highangle")
+                            return { minFrac: 0.04, reachMul: 0.45, high: true,  arcGain: 1.10, label: "HIGH-ANGLE / MORTAR" };
+    if (mode === "indirect" || mode === "oblique")
+                            return { minFrac: 0.02, reachMul: 0.96, high: true,  arcGain: 0.07, label: "INDIRECT" };
+    return                         { minFrac: 0.00, reachMul: 0.90, high: false, arcGain: 0.00, label: "DIRECT" };
   }
 
   // Can a shell of muzzle speed v, fired on the chosen arc, reach (clear all intervening
@@ -1591,10 +1624,10 @@
     document.getElementById("fDeadPct").textContent = dp + "%";
     document.getElementById("fDeadBar").style.width = dp + "%";
     var hint = (fireMode === "mortar")
-      ? "High-angle plunges straight into defilade — almost no dead space."
-      : (fireMode === "oblique")
-        ? "Arced fire clears low ridges; tall close masks still leave dead space."
-        : "Flat fire is blocked by every crest — large dead-space pockets behind hills.";
+      ? "High-angle plunges into defilade — almost no dead space, but SHORT range."
+      : (fireMode === "indirect")
+        ? "Indirect arced fire clears low ridges; tall close masks still leave dead space."
+        : "Direct flat fire is blocked by every crest — large dead-space pockets behind hills.";
     document.getElementById("fHint").textContent = hint;
 
     // angle-of-fall: prefer selected enemy; else nearest enemy crab to this unit.
@@ -2381,10 +2414,10 @@
     var t = map.terrain, res = t.res, H = t.heights, cell = t.cell_m;
     var rz = (map.size_m[1] / (res - 1));
     var ex = d.x, ez = d.z, ey = d.eye + 8;
-    var maxRangeM = d.rangeM;                       // hard cap — oblique/mortar never exceed it
+    var maxRangeM = d.rangeM;                       // the gun's flat max range
     // Trajectories tried in order of preference: a flat DIRECT shot is best (fast, accurate),
-    // then OBLIQUE to clear a crest, then MORTAR to plunge into deep defilade.
-    var modes = ["direct", "oblique", "mortar"];
+    // then INDIRECT to clear a crest, then HIGH-ANGLE/MORTAR to plunge into defilade (short range).
+    var modes = ["direct", "indirect", "mortar"];
     var out = [];
     for (var i = 0; i < units.length; i++) {
       var e = units[i]; if (e === g) continue;
@@ -2395,16 +2428,17 @@
       var rng = Math.hypot(dx, dz);
       var ty = ed.eye ? heightAt(ed.x, ed.z) + ed.eye * 0.5 : heightAt(ed.x, ed.z) + 2;
       var sol = null;                                // {mode,label} of the first trajectory that reaches
-      if (rng <= maxRangeM) {
-        for (var m = 0; m < modes.length; m++) {
-          var p = trajParams(modes[m]);
-          var v = muzzleSpeed(d.rangeM);
-          if (canHit(ex, ez, ey, ed.x, ed.z, ty, res, H, cell, rz, v, p, maxRangeM)) {
-            sol = { mode: modes[m], label: p.label.split(" / ")[0] };  // "DIRECT" / "OBLIQUE" / "MORTAR"
-            break;
-          }
+      for (var m = 0; m < modes.length; m++) {
+        var p = trajParams(modes[m]);
+        var modeMaxR = maxRangeM * p.reachMul;       // HIGH-ANGLE reaches much less than the flat max
+        if (rng > modeMaxR) continue;                // this trajectory can't reach that far
+        var v = muzzleSpeed(d.rangeM);
+        if (canHit(ex, ez, ey, ed.x, ed.z, ty, res, H, cell, rz, v, p, modeMaxR)) {
+          sol = { mode: modes[m], label: p.label.split(" / ")[0] };  // DIRECT / INDIRECT / HIGH-ANGLE
+          break;
         }
       }
+      // in "range" if ANY trajectory could reach (i.e. within the flat max); else out of range.
       var state = rng > maxRangeM ? "oor" : (sol ? "fire" : "masked");
       out.push({ unit: e, name: ed.name, rng: rng, brg: bearingFromVec(dx, dz),
                  inRange: rng <= maxRangeM, sol: sol, state: state });
@@ -2522,6 +2556,27 @@
     document.getElementById("tFogCull").classList.toggle("on", show.fogcull);
     document.getElementById("tFly").onclick = function () { setFly(!fly.on); };
 
+    // ---- COMBAT LOG: open/close the full scrollable history panel ----
+    var clogHdr = document.getElementById("clogHdr"), clogFull = document.getElementById("clogFull"),
+        clogFullHdr = document.getElementById("clogFullHdr");
+    if (clogHdr && clogFull) {
+      clogHdr.onclick = function () {
+        clogFull.style.display = clogFull.style.display === "none" ? "block" : "none";
+        renderClog();
+      };
+    }
+    if (clogFullHdr && clogFull) clogFullHdr.onclick = function () { clogFull.style.display = "none"; };
+
+    // ---- CONDITIONS panel HIDE/SHOW (collapse its body) ----
+    var wxHdr = document.getElementById("wxHdr"), wxPanel = document.getElementById("wx"),
+        wxTog = document.getElementById("wxToggle");
+    if (wxHdr && wxPanel) {
+      wxHdr.onclick = function () {
+        var col = wxPanel.classList.toggle("collapsed");
+        if (wxTog) wxTog.textContent = col ? "[ SHOW ]" : "[ HIDE ]";
+      };
+    }
+
     // ---- SUBURB NAMES toggle (big floating name labels; separate from the neon markers) ----
     var subNamesBtn = document.getElementById("tSubNames");
     if (subNamesBtn) {
@@ -2575,9 +2630,9 @@
       document.getElementById("tFire").classList.toggle("on", show.fire);
       document.getElementById("fireTraj").style.display = show.fire ? "flex" : "none";
       document.getElementById("fireLeg").style.display  = show.fire ? "block" : "none";
-      ["fDirect","fOblique","fMortar"].forEach(function (id) {
-        var m = id === "fDirect" ? "direct" : id === "fOblique" ? "oblique" : "mortar";
-        document.getElementById(id).classList.toggle("on", fireMode === m);
+      [["fDirect","direct"],["fIndirect","indirect"],["fMortar","mortar"]].forEach(function (pair) {
+        var el = document.getElementById(pair[0]);
+        if (el) el.classList.toggle("on", fireMode === pair[1]);
       });
       // LOS toggle reflects that fire-analysis suppresses the plain viewshed
       document.getElementById("tLOS").classList.toggle("on", show.los && !show.fire);
@@ -2594,9 +2649,9 @@
       if (!show.fire) { show.fire = true; show.los = false; show.slope = false; show.deadzones = false; show.shaderange = false; show.netlos = false; syncSlopeUI(); deadSync(); syncShadeNet(); document.getElementById("fire").style.display = "block"; }
       syncFireUI(); rebuildOverlays();
     }
-    document.getElementById("fDirect").onclick  = function () { setTraj("direct"); };
-    document.getElementById("fOblique").onclick = function () { setTraj("oblique"); };
-    document.getElementById("fMortar").onclick  = function () { setTraj("mortar"); };
+    document.getElementById("fDirect").onclick   = function () { setTraj("direct"); };
+    document.getElementById("fIndirect").onclick = function () { setTraj("indirect"); };
+    document.getElementById("fMortar").onclick   = function () { setTraj("mortar"); };
     syncFireUI();
 
     // ---- SLOPE / TRAFFICABILITY toggle (mutually exclusive with fire + viewshed) ----
@@ -2727,19 +2782,18 @@
     // expose for keyboard
     cmd._setFlagType = setFlagType;
 
-    // ---- SPEED control (1x/2x/3x/4x) + SOUND toggle (item G13/G16) ----
-    ["spd1","spd2","spd3","spd4"].forEach(function (id) {
+    // ---- SPEED control (preset buttons + slider + keys) + SOUND toggle ----
+    SPEED_BTNS.forEach(function (id) {
       var b = document.getElementById(id); if (!b) return;
-      b.classList.toggle("on", parseInt(b.getAttribute("data-s"), 10) === simSpeed);
-      b.onclick = function () {
-        simSpeed = parseInt(b.getAttribute("data-s"), 10);
-        ["spd1","spd2","spd3","spd4"].forEach(function (i2) {
-          var e2 = document.getElementById(i2);
-          if (e2) e2.classList.toggle("on", parseInt(e2.getAttribute("data-s"), 10) === simSpeed);
-        });
-        document.getElementById("status").textContent = "SIM SPEED " + simSpeed + "x";
-      };
+      b.onclick = function () { setSimSpeed(parseFloat(b.getAttribute("data-s"))); };
     });
+    // speed SLIDER (continuous 0.25x .. 8x) + live readout
+    var slider = document.getElementById("spdSlider");
+    if (slider) {
+      slider.value = simSpeed;
+      slider.oninput = function () { setSimSpeed(parseFloat(slider.value)); };
+    }
+    updateSpeedUI();
     var sb = document.getElementById("tSound");
     if (sb) {
       sb.classList.toggle("on", soundOn);
@@ -2771,6 +2825,16 @@
       // , / . cycle the selected unit (previous / next friendly crab). Skip if typing in the <select>.
       if ((e.key === "," || e.key === ".") && (!document.activeElement || document.activeElement.tagName !== "SELECT")) {
         cycleUnit(e.key === "," ? -1 : 1); e.preventDefault(); return;
+      }
+      // = / + speeds the sim up, - / _ slows it (0.25x .. 8x). Fine step of 0.25.
+      if (e.key === "=" || e.key === "+") { setSimSpeed(simSpeed + 0.25); e.preventDefault(); return; }
+      if (e.key === "-" || e.key === "_") { setSimSpeed(simSpeed - 0.25); e.preventDefault(); return; }
+      // ARROW keys also cycle the selected unit (Left/Up = prev, Right/Down = next).
+      if ((e.key === "ArrowLeft" || e.key === "ArrowUp") && (!document.activeElement || document.activeElement.tagName !== "SELECT")) {
+        cycleUnit(-1); e.preventDefault(); return;
+      }
+      if ((e.key === "ArrowRight" || e.key === "ArrowDown") && (!document.activeElement || document.activeElement.tagName !== "SELECT")) {
+        cycleUnit(1); e.preventDefault(); return;
       }
       // COMMAND MODE keys: 1/2/3 = flag type, SPACE = play/pause
       if (cmd.on && (!document.activeElement || document.activeElement.tagName !== "SELECT")) {
@@ -2807,12 +2871,25 @@
       var lim = Math.PI / 2 - 0.05;
       fly.pitch = clamp(fly.pitch, -lim, lim);
     });
-    // wheel adjusts fly speed (instead of orbit zoom) while flying
+    // MOUSE WHEEL = ZOOM in fly mode: dolly the camera along its look direction (in/out).
+    // SHIFT+wheel adjusts fly *speed* instead. (In orbit mode OrbitControls handles wheel zoom.)
     dom.addEventListener("wheel", function (e) {
       if (!fly.on) return;
       e.preventDefault();
-      var f = e.deltaY < 0 ? 1.15 : 0.87;
-      fly.speed = clamp(fly.speed * f, 30, 60000);
+      if (e.shiftKey) {
+        var f = e.deltaY < 0 ? 1.15 : 0.87;
+        fly.speed = clamp(fly.speed * f, 30, 60000);
+        return;
+      }
+      // dolly: step a fraction of the current altitude so zoom feels consistent at any height.
+      var step = Math.max(60, (camera.position.y || 1000) * 0.14);
+      var dir = flyForward().multiplyScalar(e.deltaY < 0 ? step : -step);
+      camera.position.add(dir);
+      if (terrainField) {
+        var minY = heightAt(camera.position.x, camera.position.z) + 6;
+        if (camera.position.y < minY) camera.position.y = minY;
+      }
+      camera.lookAt(new THREE.Vector3().addVectors(camera.position, flyForward()));
     }, { passive: false });
   }
 
@@ -2891,6 +2968,24 @@
   function classSpeed(cls) {
     return cls === "Recon" ? 42 : cls === "Line" ? 30 : cls === "Siege" ? 18 :
            cls === "Convoy" ? 13 : 32;
+  }
+
+  // SIM SPEED control — shared by the 1x/2x/3x/4x buttons, the =/- keys and the slider.
+  // Continuous 0.25x .. 8x; the buttons snap to whole steps, the slider/keys are fine-grained.
+  function setSimSpeed(v) {
+    simSpeed = clamp(v, 0.25, 8);
+    updateSpeedUI();
+    document.getElementById("status").textContent = "SIM SPEED " + fmtSpeed(simSpeed) + "x";
+  }
+  function fmtSpeed(v) { return (v % 1 === 0) ? String(v) : v.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""); }
+  var SPEED_BTNS = ["spdH", "spd1", "spd2", "spd3", "spd4", "spd6", "spd8"];
+  function updateSpeedUI() {
+    SPEED_BTNS.forEach(function (id) {
+      var e = document.getElementById(id);
+      if (e) e.classList.toggle("on", Math.abs(parseFloat(e.getAttribute("data-s")) - simSpeed) < 0.01);
+    });
+    var sl = document.getElementById("spdSlider"); if (sl && Math.abs(parseFloat(sl.value) - simSpeed) > 0.001) sl.value = simSpeed;
+    var rd = document.getElementById("spdRead"); if (rd) rd.textContent = fmtSpeed(simSpeed) + "\u00D7";
   }
 
   // Per-unit command state. Called once after units are placed.
@@ -3011,25 +3106,32 @@
     units.forEach(function (g) {
       var d = g.userData, c = d.cmd;
       if (!c || !c.flags.length || c.ko) return;
-      var col = FLAG_COL[c.flags[c.flags.length - 1].userData.type] || FLAG_COL.move;
+      // live (not-yet-reached, non-null) flags only
+      var live = c.flags.filter(function (f) { return f; });
+      if (!live.length) return;
+      // MOVEMENT/ORDER lines are DARK SOLID BLUE (H1) — clearly distinct from teal comms links.
+      // Keep the flag-TYPE tint only as a subtle accent on the label, not the path colour.
+      var MOVE_LINE = 0x2c58c8;   // deep blue
+      var col = MOVE_LINE;
       // chain: unit -> flag[target] -> flag[...] in order
       var pts = [new THREE.Vector3(d.x, heightAt(d.x, d.z) + 18, d.z)];
       for (var i = c.targetIdx; i < c.flags.length; i++) {
-        var f = c.flags[i].userData;
-        pts.push(new THREE.Vector3(f.fx, heightAt(clamp(f.fx,0,map.size_m[0]), clamp(f.fz,0,map.size_m[1])) + 18, f.fz));
+        var f = c.flags[i]; if (!f) continue;
+        var fu = f.userData;
+        pts.push(new THREE.Vector3(fu.fx, heightAt(clamp(fu.fx,0,map.size_m[0]), clamp(fu.fz,0,map.size_m[1])) + 18, fu.fz));
       }
       if (pts.length < 2) return;
-      // thicker brighter dashed line: stack two slightly-offset dashed lines for a bold band
+      // bold SOLID band: stack two slightly-offset solid lines (no dashes) so it reads as a route.
       for (var s = 0; s < 2; s++) {
         var p2 = s === 0 ? pts : pts.map(function (p) { return new THREE.Vector3(p.x, p.y + span * 0.0016, p.z); });
         var geo = new THREE.BufferGeometry().setFromPoints(p2);
-        var mat = new THREE.LineDashedMaterial({ color: col, transparent: true, opacity: s === 0 ? 0.98 : 0.55,
-          dashSize: 110, gapSize: 55, depthTest: false });
-        var ln = new THREE.Line(geo, mat); ln.computeLineDistances(); ln.renderOrder = 14 + s;
+        var mat = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: s === 0 ? 0.95 : 0.5,
+          depthTest: false });
+        var ln = new THREE.Line(geo, mat); ln.renderOrder = 14 + s;
         cmd.orderGroup.add(ln);
       }
       // small unit-name label at the destination flag
-      var dest = c.flags[c.flags.length - 1].userData;
+      var dest = live[live.length - 1].userData;
       var lblPt = new THREE.Vector3(dest.fx, heightAt(clamp(dest.fx,0,map.size_m[0]), clamp(dest.fz,0,map.size_m[1])) + span * 0.020, dest.fz);
       var tag = makeTagSprite(d.name, col, span);
       tag.position.copy(lblPt); tag.material.depthTest = false; tag.renderOrder = 24;
@@ -3172,8 +3274,16 @@
         var dx = f.fx - d.x, dz = f.fz - d.z;
         var dist = Math.hypot(dx, dz);
         if (dist <= ARRIVE_M) {
+          // reached this flag: remove it from the world (I6 — flags disappear on arrival),
+          // then advance to the next waypoint. When the last one is consumed, orders are done.
+          if (cmd.flagGroup && c.flags[c.targetIdx]) cmd.flagGroup.remove(c.flags[c.targetIdx]);
+          c.flags[c.targetIdx] = null;
           c.targetIdx++;
-          if (c.targetIdx >= c.flags.length) { moved = true; }   // arrived at last flag
+          if (c.targetIdx >= c.flags.length) {
+            c.flags = []; c.targetIdx = 0; c.firingTo = c.firingTo;   // clear consumed order chain
+            moved = true;
+          }
+          drawOrderLines();
         } else {
           var step = moveStep(d, c, dx, dz, dist, dt);
           d.x += dx / dist * step; d.z += dz / dist * step;
@@ -3326,11 +3436,20 @@
       if (firstShot || c.fireTimer >= 0.7) {
         c.fireTimer = 0;
         if (!cmd._warmup) { spawnMuzzleFlash(d); spawnImpact(target.userData); playSfx("fire"); }
+        var gun = gunLabel(d);                        // which armament fired
+        var shooterCls = d.side === "friend" ? "a" : "h";
+        var tgtCls = target.userData.side === "friend" ? "a" : "h";
         if (firstShot) {
-          combatLog('<span class="a">' + d.name + '</span> fires on <span class="h">' + target.userData.name + '</span>');
+          combatLog('<span class="' + shooterCls + '">' + d.name + '</span> engages <span class="' +
+                    tgtCls + '">' + target.userData.name + '</span> <span class="dim">[' + gun + ']</span>',
+                    d.side === "friend" ? "friend" : "");
         } else if (Math.floor(before / 20) !== Math.floor(td.struct / 20)) {
-          // log struct milestones (every 20%) as hits
-          combatLog('<span class="h">' + target.userData.name + '</span> hit &middot; struct ' + Math.max(0, Math.round(td.struct)) + '%', "hit");
+          // K1/K2: log WHO hit WHAT with WHICH gun; for FRIENDLY fire record the impact ZONE.
+          var zone = hitZone(bestD, d.rangeM);       // SIDE / DECK / GLACIS from range (angle of fall)
+          var zoneTxt = d.side === "friend" ? ' <span class="dim">on ' + zone + '</span>' : '';
+          combatLog('<span class="' + shooterCls + '">' + d.name + '</span> hits <span class="' + tgtCls +
+                    '">' + target.userData.name + '</span> <span class="dim">[' + gun + ']</span>' + zoneTxt +
+                    ' &middot; struct ' + Math.max(0, Math.round(td.struct)) + '%', "hit");
         }
       }
       if (td.struct <= 0) { td.struct = 0; knockOut(target); }
@@ -3341,6 +3460,17 @@
   }
   function stopFiring(g) {
     var c = g.userData.cmd; if (c) { c.firingTo = null; c.fireTimer = 0; }
+  }
+  // A short armament label for the combat log (strips any trailing "(18km)" range tag).
+  function gunLabel(d) {
+    var g = String(d.gun || "GUN").replace(/\s*\([^)]*\)\s*$/, "").trim();
+    return g || "MAIN GUN";
+  }
+  // Which armour face a shot strikes, from range as a proxy for angle of fall (ref ARTILLERY
+  // doctrine §4): short range = shallow fall = SIDE/GLACIS; long range = steep fall = DECK (top).
+  function hitZone(dist, maxR) {
+    var f = maxR > 0 ? dist / maxR : 0;
+    return f > 0.75 ? "DECK" : f > 0.45 ? "SIDE" : "GLACIS";
   }
 
   function knockOut(g) {
@@ -3515,7 +3645,7 @@
     var ny = heightAt(clamp(x,0,map.size_m[0]), clamp(z,0,map.size_m[1]));
     d.x = x; d.z = z; g.position.set(x, ny, z);
     d.eye = ny + d._eyeOff;
-    d.cmd.struct = 100; d.cmd.ko = false; d.cmd.speed = classSpeed(cls);
+    d.cmd.struct = 100; d.cmd.ko = false; d.cmd.speed = classSpeed(cls); d.cmd.aiTarget = null;
     // recolour body to the (possibly new) side
     var col = side === "friend" ? COL.friend : side === "hostile" ? COL.hostile : COL.civ;
     var mk = side === "friend" ? COL.mkFriend : side === "hostile" ? COL.mkHostile : COL.mkCiv;
@@ -3707,6 +3837,10 @@
     if (cmd.on && cmd.playing) stepCommandSim(dt);
     else if (cmd.on) updateFiringFx();   // keep tracers tidy when paused
     if (cmd.on) updateFxSprites();       // fade muzzle/impact flashes
+
+    // decay the mini combat log over real time (re-render ~4x/sec even with no new lines)
+    _clogDecayT = (_clogDecayT || 0) + dt;
+    if (cmd.on && _clogDecayT > 0.25) { _clogDecayT = 0; renderClog(); }
 
     // HUD compass rose: follow the live camera heading vs TRUE north
     updateCompassHud();
