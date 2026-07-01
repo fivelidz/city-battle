@@ -4426,22 +4426,31 @@
     portraitCam.position.set(d.x + Math.cos(ang) * rad, ground + bodyH + rad * 0.45, d.z + Math.sin(ang) * rad);
     portraitCam.lookAt(center);
     var r = wrap.getBoundingClientRect();
-    var glH = renderer.domElement.clientHeight, pr = renderer.getPixelRatio();
-    // convert CSS top-left rect to GL bottom-left viewport
+    // three.js setViewport/setScissor take CSS pixels (it applies pixelRatio internally) with a
+    // BOTTOM-LEFT origin. Convert the panel's top-left DOM rect accordingly. (NO manual *pixelRatio
+    // — doing that double-applied it and corrupted the main render + mouse mapping.)
+    var glH = renderer.domElement.clientHeight;
     var vx = r.left, vy = glH - r.bottom, vw = r.width, vh = r.height;
     if (vw < 4 || vh < 4) return;
     // hide the markers of the selected unit briefly so the portrait shows the model, not the billboard
     var hid = [d.marker, d.label, d.selRing, d.firedRing, d.halo, d.statusSprite, d.offTag];
     hid.forEach(function (o) { if (o) o.visible = false; });
     renderer.setScissorTest(true);
-    renderer.setViewport(vx * pr, vy * pr, vw * pr, vh * pr);
-    renderer.setScissor(vx * pr, vy * pr, vw * pr, vh * pr);
+    renderer.setViewport(vx, vy, vw, vh);
+    renderer.setScissor(vx, vy, vw, vh);
     portraitCam.aspect = vw / vh; portraitCam.updateProjectionMatrix();
     renderer.render(scene, portraitCam);
-    renderer.setScissorTest(false);
-    renderer.setViewport(0, 0, renderer.domElement.clientWidth * pr, glH * pr);
+    restoreMainViewport();     // ALWAYS restore full viewport + scissor off
     hid.forEach(function (o) { if (o) o.visible = (o === d.marker || o === d.label || o === d.statusSprite) ? markersOn : o.visible; });
     if (d.selRing && d.selMat) d.selMat.opacity = markersOn ? 1 : 0;   // restore selection ring
+  }
+  // Restore the renderer to the full canvas viewport with scissor OFF. Called after every mini-cam
+  // pass so the main render, the mouse->NDC mapping and the raycaster are never left in a bad state.
+  function restoreMainViewport() {
+    var sz = new THREE.Vector2(); renderer.getSize(sz);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, sz.x, sz.y);
+    renderer.setScissor(0, 0, sz.x, sz.y);
   }
 
   // ---------- L1: COMBAT POV VIEWER ----------
@@ -4481,20 +4490,18 @@
     eye.addScaledVector(dir, -70);
     povCamera.position.copy(eye);
     povCamera.lookAt(tgt);
-    // viewport rectangle (bottom-right, above the conditions panel), in device pixels
+    // viewport rectangle in CSS pixels, matched to the DOM frame (#povView is right:14 bottom:150).
+    // three.js applies pixelRatio internally — pass CSS pixels only (bottom-left origin).
     var W = renderer.domElement.clientWidth, H = renderer.domElement.clientHeight;
     var pw = Math.min(320, W * 0.24), ph = pw / 1.6;
-    var px = W - pw - 14, py = 150;   // from bottom-left origin of the GL viewport
-    // size the DOM frame to match
+    var px = W - pw - 14, py = 150;   // bottom-left origin of the GL viewport
     host.style.width = pw + "px"; host.style.height = ph + "px";
-    var pr = renderer.getPixelRatio();
     renderer.setScissorTest(true);
-    renderer.setViewport(px * pr, py * pr, pw * pr, ph * pr);
-    renderer.setScissor(px * pr, py * pr, pw * pr, ph * pr);
+    renderer.setViewport(px, py, pw, ph);
+    renderer.setScissor(px, py, pw, ph);
     povCamera.aspect = pw / ph; povCamera.updateProjectionMatrix();
     renderer.render(scene, povCamera);
-    renderer.setScissorTest(false);
-    renderer.setViewport(0, 0, W * pr, H * pr);
+    restoreMainViewport();     // ALWAYS restore full viewport + scissor off
     var lbl = document.getElementById("povLabel");
     if (lbl) lbl.textContent = f.name + " \u2192 " + t.name;
   }

@@ -214,3 +214,72 @@ F1–F5 targeting + trajectory + maths panel, L1 combat POV viewer, O1 canHit in
 B1 real suburb borders.
 
 **Later:** N1 comms towers, O2–O7 depth systems.
+
+---
+
+# Round 3 feedback — 2026-07-01 (session 2)
+
+## Q. CRITICAL rendering / alignment bugs
+
+- **[ ] Q1 — Unit MODELS missing; white rectangles float where units should be.** The crab meshes
+  aren't showing; instead misplaced white rectangles appear over their positions. Likely caused by
+  the mini-camera (portrait/POV) scissor viewports corrupting the main render state.
+- **[ ] Q2 — Portrait mini-cam MISPLACED.** The selected-unit mini-render sits behind the unit
+  panel and behind a black box where the panel should be. Scissor rect wrong / z-order wrong.
+- **[ ] Q3 — Click + move alignment is OFF.** Clicking units and placing move orders on the map
+  doesn't conform to the map — the raycast/screen mapping is misaligned (very likely the same
+  scissor-viewport side effect: renderer viewport/pixelRatio left in a bad state, so mouse→NDC is
+  wrong). FIX THE SCISSOR VIEWPORTS FIRST — restore full viewport every frame.
+
+## R. UI layout / controls
+
+- **[ ] R1 — Move SPEED controls INTO the Command & Control panel, near the PLAY button** (not
+  under the free-cam hint at bottom-centre).
+- **[ ] R2 — CONDITIONS panel should sit UNDER the compass display** (top-right, below the rose).
+- **[ ] R3 — Markers SMALL by default.** (Currently full.) Good.
+- **[ ] R4 — The selection marker INDICATOR is not good** — rework how a selected unit is shown
+  (the current ring/triangle treatment). Keep it subtle/clear.
+- **[ ] R5 — DRAGGABLE panels** — each panel needs a grab handle so it can be moved around.
+- **[ ] R6 — "CITY BATTLE" title (top-left) opens a MENU:** bring up panels / hide panels /
+  hotkeys / tutorial, etc.
+
+## S. Unit list (press U)
+
+- **[ ] S1 — UNIT LIST panel, toggled with the `U` key.** A spreadsheet-like list of all units so
+  they can be selected from the list. Columns: current action, orders, engagement status, status
+  (KO/fire/ammo), class, etc. Also lists SPOTTED ENEMIES and conveys known info about them
+  (class if identified, last-known position, range).
+
+## T. Fire solution (gun-aware)
+
+- **[ ] T1 — Fire solution must specify GUN TYPE and ACTUAL CHARGES** (real propellant charge/zone
+  per gun, not a generic label).
+- **[ ] T2 — If a solution CANNOT reach, just say "CANNOT REACH"** (instead of showing bogus
+  numbers / "beyond max range").
+- **[ ] T3 — MULTI-GUN units: select which gun the fire solution is for.** Some units have multiple
+  guns; selecting each gun in the fire-solution panel recomputes for that gun.
+
+## U. Suburb infill / overlay modes
+
+- **[ ] U1 — SUBURB INFILL MODE (cycle).** The area a suburb holds should be lightly SHADED in.
+  Only 4 primary colours needed for the whole map (4-colour map theorem). Make it a strong overlay
+  that can be turned off. Cycle: **nothing → borders → borders + territory overlay → all → names**.
+
+## V. Immunity band
+
+- **[ ] V1 — FLIP the immunity band meaning** so it clearly reads that anything WITHIN the band is
+  a THREAT (currently reads as the safe/immune band; invert to a threat band, or relabel + recolour
+  so "inside = danger").
+- **[ ] V2 — Immunity band as an INDEPENDENT toggle** — able to be turned on without enabling the
+  whole Fire Analysis overlay.
+
+## Session goals
+1. **Make the online demo work better with these fixes so it is more playable** (Q + R + T priority).
+2. **Then test the FULL interface** once the demo is solid.
+
+## W. Spotted-enemy marker annotations
+
+- **[ ] W1 — Spotted enemy shows WHO sees it + WHO is firing on it.** Under a spotted enemy unit's
+  name, in very small text: a small EYE symbol (👁) followed by the allied unit(s) that currently
+  have LOS on it, and a CROSSHAIR symbol (⌖/✛) if an allied unit is firing on it. Small text,
+  directly under the enemy's name label. Conveys who has eyes-on and who is engaging.
