@@ -335,8 +335,30 @@
 
   function buildScene() {
     clearScene();
-    var t = map.terrain, res = t.res, cell = t.cell_m, H = t.heights;
+    var t = map.terrain, res = t.res, cell = t.cell_m;
     var W = map.size_m[0], L = map.size_m[1];
+    // A1 FIX — EAST-WEST MIRROR. The source frame is +X=east/+Z=north/+Y=up (right-handed), which
+    // renders a north-up map with EAST on the LEFT (compass reads N-W-S-E, wrong). We mirror the
+    // terrain HEIGHTMAP columns ONCE here so every grid consumer (mesh, topo texture, heightAt,
+    // viewshed, LOS, canHit, slope) flips together; then world-placed entities (units, suburbs,
+    // roads, buildings, flags) flip their world-X via MX(), and bearings negate east. Net result:
+    // north-up map now reads N-E-S-W clockwise, east on the RIGHT — true map convention.
+    if (!t._mirrored) {
+      var src = t.heights, Hm = new Float32Array(src.length);
+      for (var zz = 0; zz < res; zz++)
+        for (var xx = 0; xx < res; xx++)
+          Hm[zz * res + xx] = src[zz * res + (res - 1 - xx)];
+      t.heights = Hm; t._mirrored = true;
+      // mirror geo-anchored X of buildings + roads ONCE to match (idempotent via the flag).
+      if (map.buildings) for (var bi = 0; bi < map.buildings.length; bi++) {
+        var bp = map.buildings[bi].poly; if (bp) for (var vi = 0; vi < bp.length; vi++) bp[vi][0] = W - bp[vi][0];
+      }
+      if (map.roads) for (var ri = 0; ri < map.roads.length; ri++) {
+        var rp = map.roads[ri].path;
+        if (rp) for (var pi = 0; pi < rp.length; pi++) rp[pi][0] = W - rp[pi][0];
+      }
+    }
+    var H = t.heights;
     terrainField = { res: res, cell: cell, H: H, W: W, L: L };
     vshed = null;
 
@@ -687,7 +709,9 @@
   // Bearing from a direction vector (dx = east component, dz = north component):
   //   bearing = (atan2(east, north) in degrees + 360) % 360 ; 0=N, 90=E, 180=S, 270=W.
   function bearingFromVec(dx, dz) {
-    return (Math.atan2(dx, dz) * 180 / Math.PI + 360) % 360;
+    // A1 mirror: world-X now increases WEST on screen, so EAST is -X. Negate dx so bearings stay
+    // true (0=N, 90=E, 180=S, 270=W) in the mirrored frame.
+    return (Math.atan2(-dx, dz) * 180 / Math.PI + 360) % 360;
   }
   // 8-point compass label from a bearing in degrees (0=N,45=NE,...).
   function compass8(deg) {
@@ -737,7 +761,7 @@
     var placed = 0;
     for (var i = 0; i < SUBURBS.length; i++) {
       var s = SUBURBS[i];
-      var x = (s[1] - west) * mPerLon;     // east metres from origin
+      var x = MX((s[1] - west) * mPerLon); // east metres -> MIRRORED world-X (A1)
       var z = (s[2] - south) * mPerLat;    // north metres from origin
       if (x < 0 || x > W || z < 0 || z > L) continue;   // outside this map
       var gy = heightAt(x, z);
@@ -821,8 +845,9 @@
     var marks = [
       ["N", W / 2,      L + out],   // +Z edge = NORTH
       ["S", W / 2,      -out    ],  // -Z edge = SOUTH
-      ["E", W + out,    L / 2   ],  // +X edge = EAST
-      ["W", -out,       L / 2   ],  // -X edge = WEST
+      // A1 mirror: world-X increases WEST now, so the +X (x=W) edge is WEST and -X (x=0) is EAST.
+      ["W", W + out,    L / 2   ],  // +X edge = WEST
+      ["E", -out,       L / 2   ],  // -X edge = EAST
     ];
     for (var i = 0; i < marks.length; i++) {
       var m = marks[i];
@@ -1752,6 +1777,11 @@
     }
     colors.needsUpdate = true;
   }
+  // A1 mirror: convert a raw DATA east-metre (from lon) to the MIRRORED world-X. Terrain heights
+  // were column-flipped in buildScene, so geo-anchored content (suburbs/roads/buildings) must place
+  // at W-x to stay aligned with the mirrored terrain. Units/flags use world coords already in the
+  // mirrored frame, so they do NOT go through MX.
+  function MX(x) { return (map ? map.size_m[0] : 0) - x; }
   function heightAt(xm, zm) {
     var tf = terrainField; if (!tf) return 0;
     var fx = clamp(xm / tf.cell, 0, tf.res - 1.001);
@@ -2540,7 +2570,9 @@
     var span = Math.max(W, L);
     camera.near = span * 0.001; camera.far = span * 6; camera.updateProjectionMatrix();
     controls.target.set(W / 2, 0, L / 2);
-    camera.position.set(W / 2, span * 1.14, L / 2 + span * 0.74);
+    // Camera SOUTH of centre looking NORTH -> NORTH-UP. With the A1 east-mirror this gives the
+    // true map compass: N top, E right, S bottom, W left (N-E-S-W clockwise).
+    camera.position.set(W / 2, span * 1.14, L / 2 - span * 0.74);
     controls.update();
   }
 
