@@ -38,10 +38,10 @@
 
 ## C. UI panels & layout
 
-- **[ ] C1 — CONDITIONS panel obscures the left-side view/toggle selector panels.** The bottom-right
+- **[x] C1 — CONDITIONS panel obscures the left-side view/toggle selector panels.** The bottom-right
   Conditions/weather panel overlaps the left toggle column. Reposition so nothing overlaps.
-- **[ ] C2 — The Conditions "[ HIDE ]" button does not work.** Wire it up (collapse the panel body).
-- **[ ] C3 — "FROM ARRIVAL" / preview info blocks are too cluttered.** Replace the inline
+- **[x] C2 — The Conditions "[ HIDE ]" button does not work.** Wire it up (collapse the panel body).
+- **[x] C3 — "FROM ARRIVAL" / preview info blocks are too cluttered.** Replace the inline
   explanatory paragraphs with a small **ⓘ (i-in-a-circle)** icon that reveals the explanation on
   hover/click (tooltip/popover). Applies to the several verbose help paragraphs in the left panel.
 
@@ -64,11 +64,11 @@
 > **DIRECT** (flat, needs LOS) · **INDIRECT** (arced howitzer, needs spotter) ·
 > **HIGH-ANGLE / MORTAR** (steep lob, short range, minimal dead space).
 
-- **[ ] E1 — RENAME trajectory modes to doctrinal terms.** Current UI: DIRECT / OBLIQUE / MORTAR.
+- **[x] E1 — RENAME trajectory modes to doctrinal terms.** Current UI: DIRECT / OBLIQUE / MORTAR.
   → Should be **DIRECT / INDIRECT / HIGH-ANGLE (MORTAR)**. "Indirect" is the correct word, not
   "oblique". (User: "Indirect may be a better term than direct" — interpreted as: use the proper
   DIRECT vs INDIRECT distinction; oblique→indirect.)
-- **[ ] E2 — MORTAR / HIGH-ANGLE should have MUCH LOWER max range but LESS dead space.** Currently
+- **[x] E2 — MORTAR / HIGH-ANGLE should have MUCH LOWER max range but LESS dead space.** Currently
   mortar shares the full max range — WRONG. Mortar = short range, near-vertical plunge, almost no
   dead zone. Cap mortar range well below the gun's flat max (it's a different, shorter-reaching
   high-angle regime).
@@ -80,45 +80,45 @@
 
 ## F. Firing / targeting UX — the "maths-focused" fire panel
 
-- **[ ] F1 — SELECT TARGETING POINTS to fire at** (click a ground point or enemy to designate a
+- **[x] F1 — SELECT TARGETING POINTS to fire at** (click a ground point or enemy to designate a
   fire mission), not just auto-engage.
-- **[ ] F2 — SHOW THE ACTUAL CALCULATIONS** when firing: **gun elevation (QE), charge/propellant
+- **[x] F2 — SHOW THE ACTUAL CALCULATIONS** when firing: **gun elevation (QE), charge/propellant
   zone, muzzle velocity, time of flight, angle of fall, range**. Make it a **maths-focused panel**
   that appears when firing. This is a headline feature the user wants.
-- **[ ] F3 — DRAW THE PARABOLIC TRAJECTORY of shells as a line** (the actual arc from muzzle to
+- **[x] F3 — DRAW THE PARABOLIC TRAJECTORY of shells as a line** (the actual arc from muzzle to
   impact). Shown in the firing panel AND in the world.
-- **[ ] F4 — AUTO-TARGETING should ALSO show these** parabolic trajectory lines + calc.
-- **[ ] F5 — TRAJECTORY LINES visible even when the firing unit is NOT selected** (so you can watch
+- **[x] F4 — AUTO-TARGETING should ALSO show these** parabolic trajectory lines + calc.
+- **[x] F5 — TRAJECTORY LINES visible even when the firing unit is NOT selected** (so you can watch
   the whole battle's arcs of fire). Applies to engagement fire, both sides.
 
 ## G. Immunity band (independent from fire-control)
 
-- **[ ] G1 — IMMUNITY BAND line should be MORE CLEAR & BOLD.** It's a distinct concept from
+- **[x] G1 — IMMUNITY BAND line should be MORE CLEAR & BOLD.** It's a distinct concept from
   fire-control and should read as its own bold overlay.
-- **[ ] G2 — Selecting the immunity band shows a DROPDOWN** to specify the **type of shell / gun
+- **[x] G2 — Selecting the immunity band shows a DROPDOWN** to specify the **type of shell / gun
   expected to be faced**, so the band is computed from THAT threat gun vs the SELECTED unit's
   armour. (Currently it guesses from a reference enemy.)
-- **[ ] G3 — ENEMY units can be selected for immunity-band calc IF their class is known.** (Known
+- **[x] G3 — ENEMY units can be selected for immunity-band calc IF their class is known.** (Known
   class → known armour scheme → can compute their immunity band too.)
 
 ## H. Lines (movement / objective vs comms)
 
-- **[ ] H1 — MOVEMENT lines look too similar to COMMS lines.** Make movement/objective/order lines
+- **[x] H1 — MOVEMENT lines look too similar to COMMS lines.** Make movement/objective/order lines
   a **darker blue, more solid** (comms stays teal, thinner/dashed). ALL movement/objective-related
   lines get this darker-solid-blue treatment.
 
 ## I. Unit markers / indicators / selection
 
-- **[ ] I1 — Unit indicators (floating tags) are TOO BIG.** Make them **smaller triangles closer to
+- **[x] I1 — Unit indicators (floating tags) are TOO BIG.** Make them **smaller triangles closer to
   the unit**, and allow **resize / turn OFF via a view button**.
-- **[ ] I2 — ARROW-KEY selection** of units (cycle through units with arrow keys). (`,`/`.` exists;
+- **[x] I2 — ARROW-KEY selection** of units (cycle through units with arrow keys). (`,`/`.` exists;
   add arrow keys.)
-- **[ ] I3 — SELECTED unit's triangle gets a YELLOW+BLACK outline.**
-- **[ ] I4 — A unit BEING FIRED ON gets a RED outline** on its position indicator — visible together
+- **[x] I3 — SELECTED unit's triangle gets a YELLOW+BLACK outline.**
+- **[x] I4 — A unit BEING FIRED ON gets a RED outline** on its position indicator — visible together
   with the selection outline if both apply.
-- **[ ] I5 — STATUS on the marker:** an **ammunition bar**, and a **status symbol** (e.g. knocked
+- **[x] I5 — STATUS on the marker:** an **ammunition bar**, and a **status symbol** (e.g. knocked
   out, on fire).
-- **[ ] I6 — MOVEMENT FLAG disappears when the unit reaches it.** (Currently the flag lingers.)
+- **[x] I6 — MOVEMENT FLAG disappears when the unit reaches it.** (Currently the flag lingers.)
 
 ## J. Selected-unit panel
 
@@ -127,16 +127,16 @@
 
 ## K. Combat log
 
-- **[ ] K1 — Log WHICH unit scored a hit and WITH WHAT ARMAMENT** ("ANZAC-02 hits RAIDER-1 with
+- **[x] K1 — Log WHICH unit scored a hit and WITH WHAT ARMAMENT** ("ANZAC-02 hits RAIDER-1 with
   SG-305").
-- **[ ] K2 — For FRIENDLY units, record WHERE hits landed** (impact location / hit zone).
-- **[ ] K3 — Combat log can be OPENED into a scrollable panel** (full history).
-- **[ ] K4 — The MINI combat log must DECAY old messages** — currently everything stacks, gets
+- **[x] K2 — For FRIENDLY units, record WHERE hits landed** (impact location / hit zone).
+- **[x] K3 — Combat log can be OPENED into a scrollable panel** (full history).
+- **[x] K4 — The MINI combat log must DECAY old messages** — currently everything stacks, gets
   squashed and unreadable. Cap + fade/expire old lines in the mini view.
 
 ## L. Combat viewer / POV
 
-- **[ ] L1 — "COMBAT VIEWER" POV system missing:** a zoomed-in point-of-view onto the TARGETED
+- **[x] L1 — "COMBAT VIEWER" POV system missing:** a zoomed-in point-of-view onto the TARGETED
   enemy from the firing unit's line of sight. User expected this and did not see it. Build a
   picture-in-picture / POV camera down the LOS to the target when engaging.
 
