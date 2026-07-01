@@ -130,6 +130,14 @@
   /* full scrollable combat log */
   #clogFull{position:fixed;left:290px;bottom:140px;width:360px;max-height:44vh;z-index:8;overflow:hidden}
   #clogFullBody{font-size:10.5px;line-height:1.7;letter-spacing:.02em;max-height:calc(44vh - 34px);overflow-y:auto}
+  /* F2: FIRE SOLUTION maths panel (bottom-left, above the unit panel area / right of it) */
+  #firesol{left:290px;bottom:140px;width:250px;z-index:7}
+  #firesol .fsgrid{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-top:6px;font-size:10.5px}
+  #firesol .fsgrid > div{display:flex;flex-direction:column;line-height:1.5;
+    border-left:2px solid var(--amber);padding-left:6px}
+  #firesol .fsgrid .dim{font-size:8.5px;letter-spacing:.06em}
+  #firesol .fsgrid span:last-child{color:var(--ink);font-weight:bold}
+  #firesol .hdr .dim{color:var(--teal)}
   /* SPEED + SOUND control row (bottom-centre, command mode) */
   #simctl{position:fixed;bottom:48px;left:50%;transform:translateX(-50%);z-index:6;display:none;
     gap:5px;align-items:center;flex-direction:row}
@@ -345,6 +353,23 @@
     <div id="tgtBody"></div>
   </div>
   <div class="row dim" id="uNote" style="margin-top:5px"></div>
+</div>
+
+<!-- F2: FIRE SOLUTION maths panel — appears when a gun is selected/engaging -->
+<div class="panel" id="firesol" style="display:none">
+  <div class="hdr">Fire Solution <span id="fsMode" class="dim" style="font-size:10px;letter-spacing:.08em"></span></div>
+  <div class="row"><span class="dim">TARGET</span> <span id="fsTgt" class="k">—</span></div>
+  <div class="fsgrid">
+    <div><span class="dim">RANGE</span><span id="fsRange">—</span></div>
+    <div><span class="dim">MUZZLE VEL</span><span id="fsVel">—</span></div>
+    <div><span class="dim">ELEVATION (QE)</span><span id="fsElev">—</span></div>
+    <div><span class="dim">ANGLE OF FALL</span><span id="fsFall">—</span></div>
+    <div><span class="dim">TIME OF FLIGHT</span><span id="fsTof">—</span></div>
+    <div><span class="dim">APEX</span><span id="fsApex">—</span></div>
+    <div><span class="dim">CHARGE</span><span id="fsCharge">—</span></div>
+    <div><span class="dim">HIT ZONE</span><span id="fsZone">—</span></div>
+  </div>
+  <div class="row dim" id="fsHint" style="margin-top:5px;font-size:9px;line-height:1.5"></div>
 </div>
 
 <div class="panel" id="clog">

@@ -166,7 +166,7 @@
     on: false, playing: false, flagType: "move", flagship: null, scenario: "",
     selectedSet: [], objective: null, flagGroup: null, orderGroup: null, fxGroup: null,
     forceScenario: QS.get("scenario") || "", forcePlay: QS.get("play") === "1",
-    netStat: "", flagshipOffNet: false,
+    netStat: "", flagshipOffNet: false, fireTarget: null,
     // objective resolution: win/lose tracking for the active scenario (mirrors the Unity
     // ObjectiveSystem). holdTimer accrues while the crest is held uncontested; outcome flips
     // to "win"/"lose" and freezes the sim with a banner.
@@ -1301,6 +1301,54 @@
   // Ballistics.MaxRange in the game). v = sqrt(rangeM * g).
   function muzzleSpeed(rangeM) { return Math.sqrt(Math.max(1, rangeM) * 9.81); }
 
+  // F2: closed-form ballistic firing solution (vacuum model, matches the game's Ballistics).
+  //   Muzzle speed v hits horizontal range R at two elevations: sin(2θ)=Rg/v². The LOW root is
+  //   direct/indirect flat fire; the HIGH root (90-θ_low) is high-angle/mortar. Returns the gun
+  //   quadrant elevation (QE), time of flight, apex height, angle of fall and a "charge" band.
+  var G = 9.81;
+  function fireSolution(v, rangeM, highAngle) {
+    var s = clamp(rangeM * G / (v * v), 0, 1);      // sin(2θ)
+    var thLow = 0.5 * Math.asin(s);                 // low elevation root (rad)
+    var th = highAngle ? (Math.PI / 2 - thLow) : thLow;
+    var tof = (2 * v * Math.sin(th)) / G;           // time of flight (s)
+    var apex = (v * Math.sin(th)) * (v * Math.sin(th)) / (2 * G);   // max ordinate (m)
+    return {
+      elevDeg: th * 180 / Math.PI,                  // gun quadrant elevation (QE)
+      fallDeg: th * 180 / Math.PI,                  // angle of fall (symmetric in vacuum)
+      tof: tof, apex: apex, v: v,
+      chargeBand: chargeForRange(rangeM)            // propellant zone label
+    };
+  }
+  // A coarse "charge / propellant zone" label from the fraction of max range (like real zone charges).
+  function chargeForRange(rangeM) {
+    return null;   // filled per-unit in the panel (needs the gun's max range)
+  }
+  function chargeZone(frac) {
+    return frac > 0.8 ? "CHARGE 7 (full)" : frac > 0.6 ? "CHARGE 5" : frac > 0.4 ? "CHARGE 4"
+         : frac > 0.2 ? "CHARGE 3" : "CHARGE 2 (low)";
+  }
+  // Build the world-space parabola points from a firing unit to a target point, on the chosen arc.
+  // Returns an array of THREE.Vector3 along the trajectory (draped over its true arc height).
+  function trajectoryPoints(sx, sy, sz, tx, ty, tz, highAngle, steps) {
+    steps = steps || 26;
+    var dx = tx - sx, dz = tz - sz, horiz = Math.hypot(dx, dz);
+    var out = [];
+    // parabola: y follows chord + a bow; bow from the solved apex if we can, else a fraction of range.
+    var d = terrainField;
+    var rangeM = horiz;
+    var v = muzzleSpeed(Math.max(rangeM, 500));
+    var sol = fireSolution(v, rangeM, highAngle);
+    var apex = Math.min(sol.apex, rangeM * (highAngle ? 0.9 : 0.28)) || rangeM * 0.2;
+    for (var i = 0; i <= steps; i++) {
+      var t = i / steps;
+      var px = sx + dx * t, pz = sz + dz * t;
+      var chordY = sy + (ty - sy) * t;
+      var bowY = 4 * apex * t * (1 - t);            // parabolic bow above the chord
+      out.push(new THREE.Vector3(px, chordY + bowY, pz));
+    }
+    return out;
+  }
+
   // Per-trajectory tuning.  min-range fraction = inner dead zone for high-angle lobbers.
   function trajParams(mode) {
     // Doctrinal trajectories (ref docs/wiki/ref/ARTILLERY_DOCTRINE.md §1–2):
@@ -2424,8 +2472,26 @@
           cmd.target = g;   // remembered for BEST POSITION
           document.getElementById("status").textContent = "TARGET: " + g.userData.name;
         }
+        // F1: CTRL/ALT-click a hostile designates it as a FIRE MISSION target for the selected gun
+        if (cmd.on && (e.ctrlKey || e.altKey) && g.userData.side === "hostile" && selected && selected.userData.side === "friend") {
+          cmd.fireTarget = { x: g.userData.x, z: g.userData.z };
+          document.getElementById("status").textContent = "FIRE MISSION: " + g.userData.name;
+          updateFirePanel(selected); drawTrajectories();
+          return;
+        }
         if (!e.shiftKey) cmd.selectedSet = [g];
         selectUnit(g);
+      }
+    } else if (cmd.on && (e.ctrlKey || e.altKey) && selected && selected.userData.side === "friend" && terrainMesh) {
+      // F1: CTRL/ALT-click empty GROUND designates a grid fire mission (fire at that point)
+      mouse.x = (e.clientX / innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      var th = raycaster.intersectObject(terrainMesh, false);
+      if (th.length) {
+        cmd.fireTarget = { x: clamp(th[0].point.x, 0, map.size_m[0]), z: clamp(th[0].point.z, 0, map.size_m[1]) };
+        document.getElementById("status").textContent = "FIRE MISSION: GRID";
+        updateFirePanel(selected); drawTrajectories();
       }
     }
   }
@@ -2565,6 +2631,49 @@
     return out;
   }
 
+  // F2: populate the maths FIRE SOLUTION panel for the selected gun's current/nearest target.
+  function updateFirePanel(g) {
+    var panel = document.getElementById("firesol");
+    if (!panel || !g) return;
+    var d = g.userData;
+    if (!cmd.on || d.side !== "friend" || !(d.rangeM > 0)) { panel.style.display = "none"; return; }
+    // pick the target: current firing target, else designated fire point, else nearest hostile in range
+    var tgtName = "—", tx = null, tz = null, ty = null;
+    if (d.cmd && d.cmd.firingTo && !d.cmd.firingTo.userData.cmd.ko) {
+      var t = d.cmd.firingTo.userData; tx = t.x; tz = t.z; ty = t.eye; tgtName = t.name;
+    } else if (cmd.fireTarget) {
+      tx = cmd.fireTarget.x; tz = cmd.fireTarget.z; ty = heightAt(tx, tz) + 2; tgtName = "GRID " + Math.round(tx) + "," + Math.round(tz);
+    } else {
+      var best = null, bd = Infinity;
+      units.forEach(function (e) {
+        var ed = e.userData; if (ed.side !== "hostile" || (ed.cmd && ed.cmd.ko)) return;
+        var rr = Math.hypot(ed.x - d.x, ed.z - d.z);
+        if (rr < bd) { bd = rr; best = e; }
+      });
+      if (best) { tx = best.userData.x; tz = best.userData.z; ty = best.userData.eye; tgtName = best.userData.name; }
+    }
+    if (tx == null) { panel.style.display = "none"; return; }
+    var rangeM = Math.hypot(tx - d.x, tz - d.z);
+    var high = fireModeIsHigh(d, { x: tx, z: tz, eye: ty });
+    var v = muzzleSpeed(d.rangeM);
+    var sol = fireSolution(v, Math.min(rangeM, d.rangeM), high);
+    var frac = rangeM / d.rangeM;
+    panel.style.display = "block";
+    document.getElementById("fsMode").textContent = "// " + (high ? "HIGH-ANGLE / INDIRECT" : "DIRECT");
+    document.getElementById("fsTgt").textContent = tgtName;
+    document.getElementById("fsRange").textContent = (rangeM / 1000).toFixed(2) + " km";
+    document.getElementById("fsVel").textContent = Math.round(v) + " m/s";
+    document.getElementById("fsElev").textContent = sol.elevDeg.toFixed(1) + "\u00B0";
+    document.getElementById("fsFall").textContent = sol.fallDeg.toFixed(1) + "\u00B0";
+    document.getElementById("fsTof").textContent = sol.tof.toFixed(1) + " s";
+    document.getElementById("fsApex").textContent = Math.round(sol.apex) + " m";
+    document.getElementById("fsCharge").textContent = chargeZone(clamp(frac, 0, 1));
+    document.getElementById("fsZone").textContent = hitZone(rangeM, d.rangeM);
+    document.getElementById("fsHint").textContent = rangeM > d.rangeM
+      ? "TARGET BEYOND MAX RANGE — cannot reach."
+      : (high ? "Lobbed over terrain; steep fall strikes the DECK." : "Flat, fast; shallow fall strikes the SIDE/GLACIS.");
+  }
+
   function renderTargetingComputer(g) {
     var box = document.getElementById("uTgtComp");
     var body = document.getElementById("tgtBody");
@@ -2618,6 +2727,7 @@
     document.getElementById("uNote").textContent = d.note;
     updateUnitFacing(g);
     renderTargetingComputer(g);
+    updateFirePanel(g);
     rebuildOverlays();
     refreshCommsLine(g);
     if (typeof syncCommandPanel === "function") syncCommandPanel();
@@ -3124,6 +3234,7 @@
     cmd.flagGroup  = new THREE.Group(); scene.add(cmd.flagGroup);
     cmd.orderGroup = new THREE.Group(); scene.add(cmd.orderGroup);
     cmd.fxGroup    = new THREE.Group(); scene.add(cmd.fxGroup);
+    cmd.trajGroup  = new THREE.Group(); scene.add(cmd.trajGroup);   // F3/F5: parabolic fire arcs
     cmd.flagship = null; cmd.selectedSet = []; cmd.objective = null;
     units.forEach(function (g) {
       var d = g.userData;
@@ -3231,6 +3342,43 @@
   // Redraw the order/path lines for ALL friendly units (cheap; few units). Brighter/thicker
   // dashed TEAL line from each unit to its flag, with a SMALL label naming the owning unit at
   // the destination flag (item G15).
+  // F3/F5: draw a parabolic fire arc for every actively-firing unit (visible even when the firing
+  // unit is NOT selected). Friendly arcs = warm amber, hostile = red. Cheap: few units, redrawn
+  // as combat state changes. Also used for a designated fire-mission preview from the selected unit.
+  function drawTrajectories() {
+    if (!cmd.trajGroup) return;
+    while (cmd.trajGroup.children.length) {
+      var ch = cmd.trajGroup.children[0];
+      cmd.trajGroup.remove(ch); if (ch.geometry) ch.geometry.dispose(); if (ch.material) ch.material.dispose();
+    }
+    if (!cmd.on) return;
+    units.forEach(function (g) {
+      var d = g.userData, c = d.cmd;
+      if (!c || c.ko || !c.firingTo || c.firingTo.userData.cmd.ko) return;
+      var tgt = c.firingTo.userData;
+      var high = fireModeIsHigh(d, tgt);
+      var pts = trajectoryPoints(d.x, d.eye + 6, d.z, tgt.x, tgt.eye + 4, tgt.z, high, 26);
+      var col = d.side === "friend" ? 0xe8a838 : 0xd75a52;
+      var geo = new THREE.BufferGeometry().setFromPoints(pts);
+      var mat = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.85, depthTest: false });
+      var ln = new THREE.Line(geo, mat); ln.renderOrder = 15; cmd.trajGroup.add(ln);
+    });
+    // designated fire-mission preview arc from the selected unit to its designated target point
+    if (cmd.fireTarget && selected && selected.userData.cmd && !selected.userData.cmd.ko) {
+      var sd = selected.userData, ft = cmd.fireTarget;
+      var high2 = fireMode === "mortar";
+      var pp = trajectoryPoints(sd.x, sd.eye + 6, sd.z, ft.x, heightAt(ft.x, ft.z) + 2, ft.z, high2, 30);
+      var g2 = new THREE.BufferGeometry().setFromPoints(pp);
+      var m2 = new THREE.LineDashedMaterial({ color: 0x7fe6a0, dashSize: 90, gapSize: 50, transparent: true, opacity: 0.95, depthTest: false });
+      var l2 = new THREE.Line(g2, m2); l2.computeLineDistances(); l2.renderOrder = 16; cmd.trajGroup.add(l2);
+    }
+  }
+  // Decide if a firing pair uses a high-angle arc: if flat DIRECT is masked by terrain, lob it.
+  function fireModeIsHigh(d, tgt) {
+    if (!terrainField) return false;
+    return !hasLOS(d.x, d.z, d.eye, tgt.x, tgt.z, tgt.eye);   // no LOS -> indirect/high arc
+  }
+
   function drawOrderLines(_changed) {
     if (!cmd.orderGroup) return;
     while (cmd.orderGroup.children.length) cmd.orderGroup.remove(cmd.orderGroup.children[0]);
@@ -3451,8 +3599,10 @@
       if (selected) { rebuildOverlays(); renderTargetingComputer(selected); }  // firing solutions follow movement
     }
     updateFiringFx();
+    drawTrajectories();      // F3/F5: parabolic fire arcs for all engaging units
     checkFlagshipNet();
     evalObjective(dt);
+    if (selected) updateFirePanel(selected);   // F2: live maths readout for the selected gun
   }
 
   // ---------- OBJECTIVE RESOLUTION (web demo win/lose) ----------
