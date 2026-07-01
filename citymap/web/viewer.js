@@ -2139,6 +2139,14 @@
     label.material.depthTest = false; label.renderOrder = 21;
     g.add(label);
 
+    // W1: SPOTTED-BY tag under the name (enemies only) — small "👁 N  ⌖ M" text showing how many
+    // allied units SEE this enemy and how many are FIRING on it. Updated each frame during play.
+    var spotMat = new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
+    var spotTag = new THREE.Sprite(spotMat);
+    spotTag.scale.set(mkSize * 1.9, mkSize * 0.52, 1);
+    spotTag.position.y = marker.position.y + mkSize * 0.30;
+    spotTag.renderOrder = 22; g.add(spotTag);
+
     // OFF-NET ghost outline (a dashed red ring on the ground) — shown only when off the comms net
     var offRing = new THREE.LineLoop(
       ringLoopGeom(mkSize * 0.7, 48),
@@ -2157,6 +2165,7 @@
                    marker: marker, mkMat: mkMat, halo: halo, haloMat: haloMat, label: label, labelMat: label.material,
                    selRing: selRing, selMat: selMat, firedRing: firedRing, firedMat: firedMat,
                    statusSprite: statusSprite, statMat: statMat, _statusKey: "",
+                   spotTag: spotTag, spotMat: spotMat, _spotKey: "",
                    offRing: offRing, offTag: offTag, baseMkY: marker.position.y, mkSize: mkSize,
                    _eyeOff: unitLen * 0.3, struct: 100 };
     unitsGroup.add(g);
@@ -2263,6 +2272,27 @@
     if (d.statMat.map) d.statMat.map.dispose();
     d.statMat.map = new THREE.CanvasTexture(cv); d.statMat.map.needsUpdate = true;
     d.statusSprite.visible = markersOn;
+  }
+  // W1: draw the "spotted-by" tag under an enemy — eye count (friendlies with LOS) + crosshair
+  // count (friendlies firing on it). Hidden for un-spotted enemies and for friendlies/civs.
+  function updateSpotTag(g) {
+    var d = g.userData; if (!d.spotMat) return;
+    if (d.side !== "hostile" || (d.cmd && d.cmd.ko)) { if (d.spotTag) d.spotTag.visible = false; return; }
+    var sp = spottersOf(g);
+    var key = sp.eyes.length + "|" + sp.guns.length + "|" + (markersOn ? 1 : 0);
+    if (d._spotKey === key) return; d._spotKey = key;
+    if (!sp.eyes.length || !markersOn) { d.spotTag.visible = false; d.spotMat.opacity = 0; return; }
+    var W = 128, H = 34, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    var ctx = cv.getContext("2d");
+    ctx.font = "bold 20px DejaVu Sans Mono, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    var txt = "\uD83D\uDC41 " + sp.eyes.length + (sp.guns.length ? "   \u2725 " + sp.guns.length : "");
+    // dark plate for legibility
+    ctx.fillStyle = "rgba(10,14,12,0.7)"; ctx.fillRect(0, 6, W, H - 12);
+    ctx.fillStyle = sp.guns.length ? "#ff8a6a" : "#7fd6c6";
+    ctx.fillText(txt, W / 2, H / 2);
+    if (d.spotMat.map) d.spotMat.map.dispose();
+    d.spotMat.map = new THREE.CanvasTexture(cv); d.spotMat.map.needsUpdate = true;
+    d.spotTag.visible = true; d.spotMat.opacity = 1;
   }
 
   // I1: apply the current markerScale / markersOn to every unit's marker + rings + label + status.
@@ -4622,6 +4652,7 @@
         }
         md._firedOn = false;                 // cleared; re-set by stepEngage if still targeted
         updateStatusSprite(mu);
+        updateSpotTag(mu);       // W1: on-map "spotted by 👁 / fired-on ⌖" under enemy names
       }
     }
 
