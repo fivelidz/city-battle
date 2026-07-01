@@ -31,7 +31,7 @@
 
 ## B. Suburbs
 
-- **[ ] B1 — SUBURB BORDERS should be ACTUAL polygon borders, not circle/point markers.** The user
+- **[x] B1 — SUBURB BORDERS should be ACTUAL polygon borders, not circle/point markers.** The user
   wants the real suburb boundary outlines (neon border lines following the true boundary polygon),
   NOT a ring/disc at a centroid. Need suburb boundary polygons from OSM (admin_level boundaries)
   draped on terrain as neon outlines.
@@ -142,7 +142,7 @@
 
 ## M. Roads
 
-- **[~] M1 — "Can you add the roads also?"** — Roads ARE implemented (ROADS toggle, OSM highways
+- **[x] M1 — "Can you add the roads also?"** — Roads ARE implemented (ROADS toggle, OSM highways
   draped on terrain). Possibly the toggle was off, or the user wants them ON by default / more
   visible. ACTION: verify roads render on the live demo, consider default-on + heavier styling.
 
@@ -164,7 +164,7 @@
 
 ## O. Known engine gaps (recorded from prior analysis — still outstanding, web demo)
 
-1. **[ ] O1 — Live combat uses FLAT LOS only.** The direct/indirect/mortar ballistic model exists
+1. **[x] O1 — Live combat uses FLAT LOS only.** The direct/indirect/mortar ballistic model exists
    as an overlay but the actual firefight ignores it — mortars can't yet lob over hills IN THE
    FIGHT. **Wiring `canHit` into `stepEngage` is the highest-value next step.** (Ties to E1/E2/F.)
 2. **[ ] O2 — No armour/penetration in the web fight** — damage is a single 0–100 struct scalar.
