@@ -95,6 +95,7 @@
   // I1/R3: unit-marker size + on/off. SMALL by default (cycle SMALL -> FULL -> OFF via MARKERS btn).
   var markerScale = 0.6, markersOn = true;
   var namesOn = true;   // AC5: unit name labels on/off
+  var nameLabelScale = 1.0;  // AH1: name label size multiplier
   var arcsOn = true;    // AB2 option: show fire trajectory arcs
   // G2: threat gun for the immunity-band calc (name + max reach). "AUTO" uses the enemy on-map.
   var THREAT_GUNS = [
@@ -2145,6 +2146,8 @@
     var label = makeLabelSprite(name, span);
     label.position.y = marker.position.y + mkSize * 0.7;
     label.material.depthTest = false; label.renderOrder = 21;
+    label._labelBaseScale = { x: label.scale.x, y: label.scale.y };   // AH1: base for the size slider
+    label.scale.set(label.scale.x * nameLabelScale, label.scale.y * nameLabelScale, 1);
     g.add(label);
 
     // W1: SPOTTED-BY tag under the name (enemies only) — small "👁 N  ⌖ M" text showing how many
@@ -2287,19 +2290,25 @@
     var d = g.userData; if (!d.spotMat) return;
     if (d.side !== "hostile" || (d.cmd && d.cmd.ko)) { if (d.spotTag) d.spotTag.visible = false; return; }
     var sp = spottersOf(g);
-    var key = sp.eyes.length + "|" + sp.guns.length + "|" + (markersOn ? 1 : 0);
+    var seeingOnly = sp.eyes.filter(function (n) { return sp.guns.indexOf(n) < 0; });   // see but not firing
+    // AG1: build the actual-names lines. ✛ firing (red) / 👁 seeing (teal) / 📡 comms-only (dim).
+    var lines = [];
+    if (sp.guns.length)     lines.push({ c: "#ff8a6a", t: "\u2725 " + sp.guns.join(" ") });
+    if (seeingOnly.length)  lines.push({ c: "#7fd6c6", t: "\uD83D\uDC41 " + seeingOnly.join(" ") });
+    if (sp.commsOnly.length)lines.push({ c: "#9aa89e", t: "\uD83D\uDCE1 " + sp.commsOnly.length + " on net" });
+    var key = lines.map(function (l) { return l.t; }).join("|") + "|" + (markersOn ? 1 : 0);
     if (d._spotKey === key) return; d._spotKey = key;
-    if (!sp.eyes.length || !markersOn) { d.spotTag.visible = false; d.spotMat.opacity = 0; return; }
-    var W = 128, H = 34, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    if (!lines.length || !markersOn) { d.spotTag.visible = false; d.spotMat.opacity = 0; return; }
+    var W = 256, lineH = 24, H = lines.length * lineH + 8;
+    var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
     var ctx = cv.getContext("2d");
-    ctx.font = "bold 20px DejaVu Sans Mono, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    var txt = "\uD83D\uDC41 " + sp.eyes.length + (sp.guns.length ? "   \u2725 " + sp.guns.length : "");
-    // dark plate for legibility
-    ctx.fillStyle = "rgba(10,14,12,0.7)"; ctx.fillRect(0, 6, W, H - 12);
-    ctx.fillStyle = sp.guns.length ? "#ff8a6a" : "#7fd6c6";
-    ctx.fillText(txt, W / 2, H / 2);
+    ctx.font = "bold 17px DejaVu Sans Mono, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(10,14,12,0.72)"; ctx.fillRect(0, 0, W, H);
+    lines.forEach(function (l, i) { ctx.fillStyle = l.c; ctx.fillText(l.t, W / 2, 6 + lineH * (i + 0.5)); });
     if (d.spotMat.map) d.spotMat.map.dispose();
     d.spotMat.map = new THREE.CanvasTexture(cv); d.spotMat.map.needsUpdate = true;
+    // scale the sprite to the tag's aspect so names are legible
+    d.spotTag.scale.set(d.mkSize * 2.4, d.mkSize * 2.4 * (H / W), 1);
     d.spotTag.visible = true; d.spotMat.opacity = 1;
   }
 
@@ -2757,15 +2766,24 @@
     mouse.x = (e.clientX / innerWidth) * 2 - 1;
     mouse.y = -(e.clientY / innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
-    // 1) did we right-click an existing flag? -> clear that unit's orders
+    // 1) AK1: right-click an existing flag -> REMOVE just that flag/waypoint (not all orders).
     if (cmd.flagGroup) {
       var fhits = raycaster.intersectObjects(cmd.flagGroup.children, true);
       if (fhits.length) {
         var fg = fhits[0].object; while (fg.parent && !fg.userData.isFlag) fg = fg.parent;
         if (fg.userData.isFlag && !fg.userData.isObjective) {
-          // find the unit owning this flag and clear its orders
           units.forEach(function (g) {
-            if (g.userData.cmd && g.userData.cmd.flags.indexOf(fg) >= 0) clearOrders(g);
+            var c = g.userData.cmd; if (!c) return;
+            var idx = c.flags.indexOf(fg);
+            if (idx >= 0) {
+              cmd.flagGroup.remove(fg);                 // remove the flag object
+              c.flags.splice(idx, 1);                   // drop it from the chain
+              if (c.targetIdx > idx) c.targetIdx--;     // keep the pointer aligned
+              if (c.targetIdx >= c.flags.length) c.targetIdx = Math.max(0, c.flags.length - 1);
+              drawOrderLines();
+              if (g === selected) updateUnitOrders(g);
+              document.getElementById("status").textContent = "FLAG REMOVED";
+            }
           });
           return;
         }
@@ -3009,15 +3027,25 @@
   }
   // who (friendly) currently has LOS on / is firing on a given enemy — for the spotted-enemy rows
   function spottersOf(enemy) {
-    var eyes = [], guns = [];
+    // eyes = friendlies with direct LOS; guns = friendlies firing on it; commsOnly = friendlies with
+    // NO direct LOS but on the net (so they know the position via a spotter's relay, AG2).
+    var eyes = [], guns = [], commsOnly = [];
     var ed = enemy.userData;
+    var anyLos = false;
     units.forEach(function (u) {
       var ud = u.userData;
       if (ud.side !== "friend" || !ud.cmd || ud.cmd.ko) return;
-      if (hasLOS(ud.x, ud.z, ud.eye, ed.x, ed.z, ed.eye)) eyes.push(ud.name);
+      if (hasLOS(ud.x, ud.z, ud.eye, ed.x, ed.z, ed.eye)) { eyes.push(ud.name); anyLos = true; }
       if (ud.cmd.firingTo === enemy) guns.push(ud.name);
     });
-    return { eyes: eyes, guns: guns };
+    if (anyLos) {   // once anyone sees it, on-net units without LOS still "know" its position
+      units.forEach(function (u) {
+        var ud = u.userData;
+        if (ud.side !== "friend" || !ud.cmd || ud.cmd.ko || ud.offNet) return;
+        if (eyes.indexOf(ud.name) < 0) commsOnly.push(ud.name);
+      });
+    }
+    return { eyes: eyes, guns: guns, commsOnly: commsOnly };
   }
   function renderUnitList() {
     var body = document.getElementById("ulistBody"); if (!body || !unitListOpen) return;
@@ -3119,9 +3147,41 @@
     renderTargetingComputer(g);
     cmd.fireGunIdx = 0;   // reset to primary gun when selecting a new unit
     updateFirePanel(g);
+    updateUnitOrders(g);   // AJ3/AJ4: movement + fire order readout / controls
     rebuildOverlays();
     refreshCommsLine(g);
     if (typeof syncCommandPanel === "function") syncCommandPanel();
+  }
+
+  // AJ3/AJ4: refresh the unit panel's MOVEMENT + FIRE order sections for the selected unit.
+  function updateUnitOrders(g) {
+    if (!g) return; var d = g.userData, c = d.cmd || {};
+    var isFriend = d.side === "friend";
+    // movement order text
+    var mo = "STATIONARY", destBrg = "\u2014";
+    if (c.flags && c.flags.filter(function (f) { return f; }).length) {
+      var live = c.flags.filter(function (f) { return f; });
+      var last = live[live.length - 1].userData;
+      var ft = last.type;
+      mo = ft === "attack" ? "ADVANCE (attack)" : ft === "hold" ? "MOVE TO HOLD" : "MOVE";
+      // bearing from unit toward the final flag = "bearing at destination" heading
+      destBrg = bearingTxt(bearingFromVec(last.fx - d.x, last.fz - d.z));
+    } else if (c.aiTarget) { mo = "MANOEUVRING"; }
+    var moEl = document.getElementById("uMoveOrder"); if (moEl) moEl.textContent = mo;
+    var dbEl = document.getElementById("uDestBrg"); if (dbEl) dbEl.textContent = destBrg;
+    // speed slider (% of class speed)
+    var sp = document.getElementById("uSpeed"), spr = document.getElementById("uSpeedRead");
+    if (sp) {
+      var pct = c.speedPct != null ? c.speedPct : 100;
+      sp.value = pct; if (spr) spr.textContent = pct + "%";
+      sp.disabled = !isFriend;
+    }
+    // fire order buttons
+    var fw = document.getElementById("uFireWill"), hf = document.getElementById("uHoldFire");
+    if (fw && hf) {
+      var holding = !!c.holdFire;
+      fw.classList.toggle("on", !holding); hf.classList.toggle("on", holding);
+    }
   }
 
   // Cycle the selection through FRIENDLY crabs with the , and . keys (player units first; if there
@@ -3225,6 +3285,15 @@
         units.forEach(function (g) { if (g.userData.label) g.userData.label.visible = namesOn && markersOn; });
       };
     }
+    // ---- AH1: unit name-label SIZE slider ----
+    var nameSize = document.getElementById("nameSize");
+    if (nameSize) nameSize.oninput = function () {
+      nameLabelScale = parseFloat(nameSize.value);
+      units.forEach(function (g) {
+        var lb = g.userData.label;
+        if (lb && lb._labelBaseScale) lb.scale.set(lb._labelBaseScale.x * nameLabelScale, lb._labelBaseScale.y * nameLabelScale, 1);
+      });
+    };
 
     // ---- V2: THREAT BAND independent toggle + its own threat-gun dropdown ----
     var thBtn = document.getElementById("tThreat");
@@ -3269,6 +3338,25 @@
     if (hkClose) hkClose.onclick = function () { document.getElementById("hotkeys").style.display = "none"; };
     var hkOverlay = document.getElementById("hotkeys");
     if (hkOverlay) hkOverlay.addEventListener("click", function (e) { if (e.target === hkOverlay) hkOverlay.style.display = "none"; });
+
+    // ---- AJ3/AJ4: unit-panel MOVEMENT speed + FIRE orders ----
+    var uSpeed = document.getElementById("uSpeed"), uSpeedRead = document.getElementById("uSpeedRead");
+    if (uSpeed) uSpeed.oninput = function () {
+      if (selected && selected.userData.cmd) {
+        selected.userData.cmd.speedPct = parseInt(uSpeed.value, 10);
+        selected.userData.cmd.speed = classSpeed(selected.userData.cls) * (uSpeed.value / 100);
+      }
+      if (uSpeedRead) uSpeedRead.textContent = uSpeed.value + "%";
+    };
+    var uFireWill = document.getElementById("uFireWill"), uHoldFire = document.getElementById("uHoldFire");
+    if (uFireWill) uFireWill.onclick = function () {
+      if (selected && selected.userData.cmd) { selected.userData.cmd.holdFire = false; stopFiring(selected); }
+      updateUnitOrders(selected);
+    };
+    if (uHoldFire) uHoldFire.onclick = function () {
+      if (selected && selected.userData.cmd) { selected.userData.cmd.holdFire = true; stopFiring(selected); }
+      updateUnitOrders(selected);
+    };
 
     // ---- AB2: gameplay OPTIONS overlay ----
     var opPanel = document.getElementById("optionsPanel"), opClose = document.getElementById("optClose");
@@ -4015,9 +4103,10 @@
     var span = Math.max(map.size_m[0], map.size_m[1]);
     var crownTex = makeCrownTexture();
     var crown = new THREE.Sprite(new THREE.SpriteMaterial({ map: crownTex, transparent: true, depthTest: false, depthWrite: false }));
-    var cs = d.mkSize * 0.62;
+    var cs = d.mkSize * 0.9;   // AK2: bigger, prominent gold STAR (flagship = command node)
     crown.scale.set(cs, cs, 1);
-    crown.position.set(0, d.baseMkY + d.mkSize * 0.62, 0);
+    crown.renderOrder = 26;
+    crown.position.set(0, d.baseMkY + d.mkSize * 0.55, 0);
     crown.renderOrder = 25; g.add(crown); d.crown = crown;
     var tag = makeTagSprite("FLAGSHIP", FLAG_COL.objective, span);
     tag.position.set(0, d.baseMkY + d.mkSize * 1.25, 0);
@@ -4316,7 +4405,7 @@
     if (d.side === "civ" || d.rangeM <= 0) { stopFiring(g); return; }
     // a pure HOLD posture holds fire unless already engaged this exchange
     var lastFlag = c.flags.length ? c.flags[c.targetIdx >= c.flags.length ? c.flags.length-1 : c.targetIdx].userData : null;
-    var holdFire = (lastFlag && lastFlag.type === "hold") && !d._engageAll;
+    var holdFire = c.holdFire || ((lastFlag && lastFlag.type === "hold") && !d._engageAll);   // AJ4 explicit hold-fire
     // friendly engages hostiles; hostile engages friendlies (so the demo fights back)
     var enemySide = d.side === "friend" ? "hostile" : "friend";
     // O1: BALLISTIC engageability — a unit can engage only if some trajectory actually reaches the
@@ -4788,7 +4877,7 @@
 
     // decay the mini combat log over real time (re-render ~4x/sec even with no new lines)
     _clogDecayT = (_clogDecayT || 0) + dt;
-    if (cmd.on && _clogDecayT > 0.25) { _clogDecayT = 0; renderClog(); if (unitListOpen) renderUnitList(); }
+    if (cmd.on && _clogDecayT > 0.25) { _clogDecayT = 0; renderClog(); if (unitListOpen) renderUnitList(); if (selected) updateUnitOrders(selected); }
 
     // I4/I5: per-frame marker upkeep — fired-on red ring + ammo/status strip.
     if (cmd.on) {
