@@ -4179,6 +4179,42 @@
     }
     renderer.render(scene, camera);
     renderCombatPOV();      // L1: picture-in-picture down the firing unit's LOS to its target
+    renderPortrait();       // J1: mini live render of the selected crab in the unit panel
+  }
+
+  // ---------- J1: SELECTED-UNIT PORTRAIT ----------
+  var portraitCam = null;
+  function renderPortrait() {
+    var wrap = document.getElementById("uPortraitWrap");
+    var panel = document.getElementById("unit");
+    if (!wrap || !panel || panel.style.display === "none" || !selected) return;
+    var d = selected.userData; if (d.x == null) return;
+    if (!portraitCam) portraitCam = new THREE.PerspectiveCamera(38, 74 / 60, 1, 100000);
+    // slow auto-orbit around the crab hull so you can see its shape + facing
+    var ang = performance.now() * 0.0006;
+    var ground = heightAt(d.x, d.z);
+    var bodyH = (d._eyeOff || 6) * 1.2;                 // approx hull mid height
+    var center = new THREE.Vector3(d.x, ground + bodyH, d.z);
+    var rad = Math.max(28, (d._eyeOff || 6) * 6);       // close framing on the crab
+    portraitCam.position.set(d.x + Math.cos(ang) * rad, ground + bodyH + rad * 0.45, d.z + Math.sin(ang) * rad);
+    portraitCam.lookAt(center);
+    var r = wrap.getBoundingClientRect();
+    var glH = renderer.domElement.clientHeight, pr = renderer.getPixelRatio();
+    // convert CSS top-left rect to GL bottom-left viewport
+    var vx = r.left, vy = glH - r.bottom, vw = r.width, vh = r.height;
+    if (vw < 4 || vh < 4) return;
+    // hide the markers of the selected unit briefly so the portrait shows the model, not the billboard
+    var hid = [d.marker, d.label, d.selRing, d.firedRing, d.halo, d.statusSprite, d.offTag];
+    hid.forEach(function (o) { if (o) o.visible = false; });
+    renderer.setScissorTest(true);
+    renderer.setViewport(vx * pr, vy * pr, vw * pr, vh * pr);
+    renderer.setScissor(vx * pr, vy * pr, vw * pr, vh * pr);
+    portraitCam.aspect = vw / vh; portraitCam.updateProjectionMatrix();
+    renderer.render(scene, portraitCam);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, renderer.domElement.clientWidth * pr, glH * pr);
+    hid.forEach(function (o) { if (o) o.visible = (o === d.marker || o === d.label || o === d.statusSprite) ? markersOn : o.visible; });
+    if (d.selRing && d.selMat) d.selMat.opacity = markersOn ? 1 : 0;   // restore selection ring
   }
 
   // ---------- L1: COMBAT POV VIEWER ----------

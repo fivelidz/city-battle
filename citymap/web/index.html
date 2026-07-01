@@ -44,6 +44,15 @@
   .leg{display:flex;align-items:center;gap:8px;font-size:10px;margin:4px 0;color:var(--dim)}
   .sw{width:13px;height:4px}
   .tg{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+  /* C3: compact ⓘ info icon with a hover/tap tooltip (replaces cluttered help paragraphs) */
+  .info{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;
+    border:1px solid var(--teal);border-radius:50%;color:var(--teal);font-size:9px;font-style:italic;
+    cursor:help;position:relative;margin-left:5px;vertical-align:middle;line-height:1}
+  .info:hover>.tip,.info:focus>.tip{display:block}
+  .info>.tip{display:none;position:absolute;left:18px;top:-4px;width:190px;z-index:40;
+    background:rgba(13,17,16,.96);border:1px solid var(--hair);padding:6px 8px;border-radius:2px;
+    font-size:9.5px;line-height:1.6;letter-spacing:.02em;color:var(--dim);font-style:normal;
+    box-shadow:0 2px 12px rgba(0,0,0,.5)}
   .bar{height:5px;background:rgba(80,90,85,.22);margin:3px 0 7px;position:relative}
   .bar>i{position:absolute;inset:0 auto 0 0;background:var(--teal)}
   #scan{position:fixed;inset:0;pointer-events:none;z-index:4;opacity:.045;
@@ -214,8 +223,8 @@
     <div class="leg"><span class="sw" style="background:#6fae6a"></span> GENTLE &middot; full speed</div>
     <div class="leg"><span class="sw" style="background:#c8a23a"></span> MODERATE &middot; slowed</div>
     <div class="leg"><span class="sw" style="background:#b56a2a"></span> STEEP &middot; very slow</div>
-    <div class="leg"><span class="sw" style="background:#9a3a33"></span> CLIFF &middot; impassable</div>
-    <div class="row dim" style="margin-top:4px;font-size:9px;line-height:1.5;letter-spacing:.02em">STEEP terrain slows crabs; CLIFFS are impassable &mdash; route around them.</div>
+    <div class="leg"><span class="sw" style="background:#9a3a33"></span> CLIFF &middot; impassable
+      <span class="info" tabindex="0">i<span class="tip">STEEP terrain slows crabs; CLIFFS are impassable &mdash; route around them.</span></span></div>
   </div>
   <div class="hdr" style="margin-top:9px">Toggles</div>
   <div class="tg">
@@ -236,23 +245,22 @@
     <button class="btn" id="tShadeRange">SHADE OUT OF RANGE</button>
     <button class="btn" id="tNetLos">NET LINE OF SIGHT</button>
   </div>
-  <div class="hdr" style="margin-top:9px">Fire / LOS Preview</div>
+  <div class="hdr" style="margin-top:9px">Fire / LOS Preview<span class="info" tabindex="0">i<span class="tip">FROM ARRIVAL previews the selected crab's range &amp; LOS as if it had already reached its MOVE flag.</span></span></div>
   <div class="tg" style="flex-direction:row;gap:4px">
     <button class="btn on" id="tPrevCur" style="flex:1;padding:7px 4px">FROM CURRENT</button>
     <button class="btn" id="tPrevArr" style="flex:1;padding:7px 4px">FROM ARRIVAL</button>
   </div>
-  <div class="row dim" style="margin-top:3px;font-size:9px;line-height:1.5;letter-spacing:.02em">FROM ARRIVAL previews the selected crab's range &amp; LOS as if it had reached its MOVE flag.</div>
   <div id="deadLeg" style="display:none">
     <div class="leg"><span class="sw" style="background:#7fdf8c"></span> CAN HIT (direct fire)</div>
     <div class="leg"><span class="sw" style="background:#d75a52"></span> DEAD ZONE (masked)</div>
-    <div class="leg"><span class="sw" style="background:#5d6d64"></span> OUT OF RANGE</div>
-    <div class="row dim" style="margin-top:3px;font-size:9px;line-height:1.5;letter-spacing:.02em">FIRE PICTURE for the selected crab: flat fire cannot reach the red pockets hiding behind crests within gun range.</div>
+    <div class="leg"><span class="sw" style="background:#5d6d64"></span> OUT OF RANGE
+      <span class="info" tabindex="0">i<span class="tip">FIRE PICTURE for the selected crab: flat fire cannot reach the red pockets hiding behind crests within gun range.</span></span></div>
   </div>
   <div id="commsLeg" style="display:none">
     <div class="leg"><span class="sw" style="background:#5fd6c6"></span> COMMS LINK (LOS)</div>
-    <div class="leg"><span class="sw" style="background:#9a3a33"></span> OFF NET &middot; no contact</div>
+    <div class="leg"><span class="sw" style="background:#9a3a33"></span> OFF NET &middot; no contact
+      <span class="info" tabindex="0">i<span class="tip">Tight-beam laser comms need line of sight. A crab behind a ridge falls off the net &mdash; no orders, no live intel.</span></span></div>
     <div class="row" style="margin-top:5px"><span class="dim">COMMS</span> <span id="commsStat" class="k">--</span></div>
-    <div class="row dim" style="margin-top:3px;font-size:9px;line-height:1.5;letter-spacing:.02em">Tight-beam laser comms need line of sight. A crab behind a ridge falls off the net &mdash; no orders, no live intel.</div>
   </div>
   <div class="hdr" style="margin-top:9px">Weather</div>
   <div class="tg">
@@ -334,10 +342,17 @@
 </div>
 
 <div class="panel" id="unit">
-  <div class="hdr" id="uName">CRAB</div>
-  <div class="row"><span class="dim">CLASS</span> <span id="uClass" class="k"></span></div>
-  <div class="row"><span class="dim">IDENT</span> <span id="uIdent"></span></div>
-  <div class="row dim">STRUCT</div><div class="bar"><i id="uStruct"></i></div>
+  <div id="uHead" style="display:flex;gap:9px;align-items:flex-start">
+    <div id="uPortraitWrap" style="flex:0 0 auto;width:74px;height:60px;border:1px solid var(--hair);position:relative;background:#0c0f0d">
+      <!-- J1: live mini-render of the selected crab is drawn here via a scissored GL viewport -->
+    </div>
+    <div style="flex:1 1 auto;min-width:0">
+      <div class="hdr" id="uName" style="margin:0">CRAB</div>
+      <div class="row"><span class="dim">CLASS</span> <span id="uClass" class="k"></span></div>
+      <div class="row"><span class="dim">IDENT</span> <span id="uIdent"></span></div>
+    </div>
+  </div>
+  <div class="row dim" style="margin-top:5px">STRUCT</div><div class="bar"><i id="uStruct"></i></div>
   <div class="hdr" style="margin-top:7px;font-size:10px">Armament</div>
   <div id="uArm"></div>
   <div class="row"><span class="dim">RANGE</span> <span id="uRange"></span></div>
