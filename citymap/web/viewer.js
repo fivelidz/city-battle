@@ -89,8 +89,8 @@
   var unitsGroup = null, overlayGroup = null, wireMesh = null;
   var windGroup = null, rainGroup = null, suburbGroup = null, compassGroup = null;
   var units = [], selected = null;
-  // I1: unit-marker size + on/off (cycled by the MARKERS view button: full -> small -> off)
-  var markerScale = 1.0, markersOn = true;
+  // I1/R3: unit-marker size + on/off. SMALL by default (cycle SMALL -> FULL -> OFF via MARKERS btn).
+  var markerScale = 0.6, markersOn = true;
   // G2: threat gun for the immunity-band calc (name + max reach). "AUTO" uses the enemy on-map.
   var THREAT_GUNS = [
     { name: "AUTO (on-map enemy)", rangeM: 0 },
@@ -2059,11 +2059,12 @@
     marker.renderOrder = 20;
     g.add(marker);
 
-    // I3: SELECTION outline — yellow/black ring, shown only for the selected unit.
-    var selMat = new THREE.SpriteMaterial({ map: makeOutlineRingTexture(0xf5c518, 0x101010), transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
+    // R4: SELECTION indicator — a clean downward CARET floating just above the unit's marker
+    // (clearer + less clunky than the old yellow/black outline ring).
+    var selMat = new THREE.SpriteMaterial({ map: makeCaretTexture(0xf5c518), transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
     var selRing = new THREE.Sprite(selMat);
-    selRing.scale.set(mkSize * 1.5, mkSize * 1.5, 1);
-    selRing.position.copy(marker.position); selRing.renderOrder = 19; g.add(selRing);
+    selRing.scale.set(mkSize * 0.7, mkSize * 0.7, 1);
+    selRing.position.set(0, marker.position.y + mkSize * 0.75, 0); selRing.renderOrder = 23; g.add(selRing);
 
     // I4: FIRED-ON outline — red ring, shown when this unit is currently being fired on.
     var firedMat = new THREE.SpriteMaterial({ map: makeOutlineRingTexture(0xe8402c, 0x2a0a08), transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
@@ -2169,6 +2170,16 @@
     ctx.lineWidth = 9; ctx.strokeStyle = col;
     ctx.beginPath(); ctx.arc(c2, c2, c2 - 14, 0, Math.PI * 2); ctx.stroke();
     var tex = new THREE.CanvasTexture(cv); tex.needsUpdate = true; return tex;
+  }
+  // R4: a small downward caret (▼) used as the clean selection indicator above a unit.
+  function makeCaretTexture(colInt) {
+    var S = 64, cv = document.createElement("canvas"); cv.width = cv.height = S;
+    var ctx = cv.getContext("2d");
+    var col = "#" + ("000000" + colInt.toString(16)).slice(-6);
+    ctx.fillStyle = col; ctx.strokeStyle = "rgba(8,11,10,0.9)"; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(12, 16); ctx.lineTo(S - 12, 16); ctx.lineTo(S / 2, S - 14); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    var t = new THREE.CanvasTexture(cv); t.needsUpdate = true; return t;
   }
   // I5: draw the ammo bar + status glyph strip for a unit (cached by a key to avoid re-drawing).
   function updateStatusSprite(g) {
@@ -2561,8 +2572,8 @@
   function updateMarkerHighlights() {
     units.forEach(function (g) {
       var d = g.userData;
-      if (!d.haloMat) return;
-      d.haloMat.opacity = (g === selected) ? 0.9 : 0;
+      if (d.haloMat) d.haloMat.opacity = 0;                              // R4: no big halo
+      if (d.selMat) d.selMat.opacity = (g === selected && markersOn) ? 1 : 0;   // clean caret only
     });
   }
 
@@ -2957,11 +2968,12 @@
     // ---- MARKERS view button: cycle FULL -> SMALL -> OFF (I1) ----
     var mkBtn = document.getElementById("tMarkers");
     if (mkBtn) {
+      mkBtn.textContent = "MARKERS: SMALL";
       mkBtn.onclick = function () {
-        // cycle state
-        if (markersOn && markerScale > 0.75) { markerScale = 0.6; markersOn = true; mkBtn.textContent = "MARKERS: SMALL"; }
+        // cycle SMALL -> FULL -> OFF -> SMALL (small is the sensible default)
+        if (markersOn && markerScale < 0.75) { markerScale = 1.0; markersOn = true; mkBtn.textContent = "MARKERS: FULL"; }
         else if (markersOn) { markersOn = false; mkBtn.textContent = "MARKERS: OFF"; }
-        else { markersOn = true; markerScale = 1.0; mkBtn.textContent = "MARKERS: FULL"; }
+        else { markersOn = true; markerScale = 0.6; mkBtn.textContent = "MARKERS: SMALL"; }
         mkBtn.classList.toggle("on", markersOn);
         applyMarkerScale();
       };
@@ -4381,12 +4393,10 @@
     // refresh the selected unit's facing dial (it rotates as it moves under command sim)
     if (selected && document.getElementById("unit").style.display !== "none") updateUnitFacing(selected);
 
-    // pulse the selected unit's halo
-    if (selected && selected.userData.haloMat) {
-      var pulse = 0.55 + 0.4 * (0.5 + 0.5 * Math.sin(performance.now() * 0.004));
-      selected.userData.haloMat.opacity = pulse;
-      var s = selected.userData.mkSize * (2.0 + 0.25 * (0.5 + 0.5 * Math.sin(performance.now() * 0.004)));
-      selected.userData.halo.scale.set(s, s, 1);
+    // R4: gently bob the selection caret above the selected unit (subtle, no big pulsing halo)
+    if (selected && selected.userData.selRing) {
+      var bob = Math.sin(performance.now() * 0.005) * (selected.userData.mkSize * 0.12);
+      selected.userData.selRing.position.y = selected.userData.marker.position.y + selected.userData.mkSize * 0.75 + bob;
     }
     // animate rain falling (only when present + visible)
     if (rainPoints && rainGroup && rainGroup.visible && map) {

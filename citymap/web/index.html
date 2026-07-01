@@ -28,8 +28,8 @@
      nothing overlaps. #wx is collapsible (its header toggles the body) and is pinned just
      above the ctrls row. */
   #legend{top:42px;right:10px;width:194px;bottom:172px;overflow-y:auto}
-  /* Conditions pinned to the bottom-right, height-capped so it NEVER rises into #legend above it. */
-  #wx{bottom:50px;right:10px;width:194px;max-height:112px;overflow-y:auto}
+  /* R2: Conditions sits UNDER the compass rose (top-right compass column), not bottom-right. */
+  #wx{position:fixed;top:196px;right:212px;width:150px;max-height:40vh;overflow-y:auto;z-index:5}
   #wx.collapsed{max-height:none}
   #wx .hdr{cursor:pointer;display:flex;align-items:center;justify-content:space-between}
   #wx .hdr .tw{font-size:10px;color:var(--dim);letter-spacing:.10em}
@@ -171,12 +171,11 @@
   #events .ev .a{color:var(--teal)} #events .ev .h{color:var(--red)}
   @keyframes evfade{0%{opacity:0;transform:translateY(-6px)}10%{opacity:1;transform:translateY(0)}
     75%{opacity:1}100%{opacity:0;transform:translateY(-4px)}}
-  /* SPEED + SOUND control row (bottom-centre, command mode) */
-  #simctl{position:fixed;bottom:48px;left:50%;transform:translateX(-50%);z-index:6;display:none;
-    gap:5px;align-items:center;flex-direction:row}
-  #simctl .lab{color:var(--dim);font-size:10px;letter-spacing:.12em;margin-right:3px}
-  #simctl .btn{padding:5px 9px;font-size:10px}
-  #simctl .btn.on{border-color:var(--teal);color:var(--teal)}
+  /* R1: SPEED row now lives INSIDE the command panel, under PLAY */
+  #simctl{display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:5px}
+  #simctl .lab{color:var(--dim);font-size:9px;letter-spacing:.10em;margin-right:2px}
+  #simctl .spdbtn{padding:3px 5px;font-size:9.5px;flex:0 0 auto}
+  #simctl .spdbtn.on{border-color:var(--teal);color:var(--teal)}
 </style>
 </head>
 <body>
@@ -336,6 +335,23 @@
   <div class="cmdrow">
     <button class="btn" id="playBtn" style="flex:1">&#9654; PLAY</button>
   </div>
+  <!-- R1: speed controls live here, right by PLAY -->
+  <div id="simctl">
+    <span class="lab">SPEED</span>
+    <button class="btn spdbtn" id="spdH" data-s="0.5">&frac12;&times;</button>
+    <button class="btn spdbtn on" id="spd1" data-s="1">1&times;</button>
+    <button class="btn spdbtn" id="spd2" data-s="2">2&times;</button>
+    <button class="btn spdbtn" id="spd3" data-s="3">3&times;</button>
+    <button class="btn spdbtn" id="spd4" data-s="4">4&times;</button>
+    <button class="btn spdbtn" id="spd6" data-s="6">6&times;</button>
+    <button class="btn spdbtn" id="spd8" data-s="8">8&times;</button>
+    <span id="spdRead" class="lab" style="color:var(--amber);margin-left:auto">1&times;</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+    <input type="range" id="spdSlider" min="0.25" max="8" step="0.25" value="1"
+      title="Sim speed ( = / - keys )" style="flex:1;vertical-align:middle">
+    <button class="btn" id="tSound" style="flex:0 0 auto;padding:4px 8px">SOUND</button>
+  </div>
   <div class="hdr" style="margin-top:8px;font-size:10px">Auto-Pause On
     <span class="info" tabindex="0">i<span class="tip">The clock auto-pauses when a ticked event happens, so you can react. SPACE resumes.</span></span>
     <span id="apToggle" class="tw" style="font-size:9px;color:var(--dim);letter-spacing:.08em;float:right;cursor:pointer">[ hide ]</span>
@@ -447,20 +463,7 @@
   <div id="clogFullBody"></div>
 </div>
 
-<div id="simctl">
-  <span class="lab">SPEED</span>
-  <button class="btn" id="spdH" data-s="0.5">&frac12;&times;</button>
-  <button class="btn on" id="spd1" data-s="1">1&times;</button>
-  <button class="btn" id="spd2" data-s="2">2&times;</button>
-  <button class="btn" id="spd3" data-s="3">3&times;</button>
-  <button class="btn" id="spd4" data-s="4">4&times;</button>
-  <button class="btn" id="spd6" data-s="6">6&times;</button>
-  <button class="btn" id="spd8" data-s="8">8&times;</button>
-  <input type="range" id="spdSlider" min="0.25" max="8" step="0.25" value="1"
-    title="Sim speed ( = / - keys )" style="width:92px;margin:0 6px;vertical-align:middle">
-  <span id="spdRead" class="lab" style="min-width:34px;color:var(--amber)">1&times;</span>
-  <button class="btn" id="tSound" style="margin-left:8px">SOUND</button>
-</div>
+
 
 <div class="panel" id="ctrls">
   <button class="btn" id="zin">+</button>
