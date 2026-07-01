@@ -171,6 +171,20 @@
   #events .ev .a{color:var(--teal)} #events .ev .h{color:var(--red)}
   @keyframes evfade{0%{opacity:0;transform:translateY(-6px)}10%{opacity:1;transform:translateY(0)}
     75%{opacity:1}100%{opacity:0;transform:translateY(-4px)}}
+  /* S1: UNIT LIST panel (press U) — a compact spreadsheet, centre-ish, draggable */
+  #ulist{position:fixed;top:70px;left:50%;transform:translateX(-50%);width:560px;max-height:70vh;
+    z-index:18;overflow:hidden;display:flex;flex-direction:column}
+  #ulistBody{overflow-y:auto;font-size:10.5px}
+  #ulist table{width:100%;border-collapse:collapse}
+  #ulist th{text-align:left;color:var(--dim);font-weight:normal;font-size:9px;letter-spacing:.06em;
+    border-bottom:1px solid var(--hair);padding:3px 5px;position:sticky;top:0;background:var(--panel)}
+  #ulist td{padding:3px 5px;border-bottom:1px solid rgba(80,96,88,.15);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+  #ulist tr.urow{cursor:pointer}
+  #ulist tr.urow:hover{background:rgba(120,140,130,.10)}
+  #ulist tr.sel{background:rgba(245,197,24,.12)}
+  #ulist tr.foe td{color:#d99}
+  #ulist .sub{color:var(--dim);font-size:9px;letter-spacing:.06em;padding:5px 5px 2px}
+  #ulist .k{color:var(--teal)} #ulist .h{color:var(--red)} #ulist .am{color:var(--amber)}
   /* R1: SPEED row now lives INSIDE the command panel, under PLAY */
   #simctl{display:flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:5px}
   #simctl .lab{color:var(--dim);font-size:9px;letter-spacing:.10em;margin-right:2px}
@@ -182,6 +196,14 @@
 <canvas id="c"></canvas>
 <div id="scan"></div>
 <div id="events"></div>
+
+<!-- S1: UNIT LIST (press U) — spreadsheet of own units + spotted enemies -->
+<div class="panel" id="ulist" style="display:none">
+  <div class="hdr" id="ulistHdr" style="cursor:move;display:flex;justify-content:space-between">
+    <span>Order of Battle</span><span class="tw" id="ulistClose" style="font-size:10px;color:var(--dim);cursor:pointer">[ U ]</span>
+  </div>
+  <div id="ulistBody"></div>
+</div>
 
 <!-- HUD compass rose: fixed N-up dial; the needle shows which way the camera looks vs true north -->
 <div id="compassHud" title="Camera heading vs TRUE north">

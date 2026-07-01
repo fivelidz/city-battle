@@ -2871,6 +2871,94 @@
     return "ZONE " + z + "/" + zones;
   }
 
+  // ---------- S1: UNIT LIST / ORDER OF BATTLE (press U) ----------
+  // A spreadsheet of the player's units (action / orders / engagement / status / class) plus any
+  // SPOTTED enemies with the known info (class if identified, range, last-known bearing).
+  var unitListOpen = false;
+  function toggleUnitList(force) {
+    unitListOpen = (force != null) ? force : !unitListOpen;
+    var p = document.getElementById("ulist");
+    if (p) p.style.display = unitListOpen ? "flex" : "none";
+    if (unitListOpen) renderUnitList();
+  }
+  function unitAction(d) {
+    var c = d.cmd; if (!c) return "—";
+    if (c.ko) return "KNOCKED OUT";
+    if (c.firingTo && !c.firingTo.userData.cmd.ko) return "ENGAGING";
+    if (c.flags && c.flags.length && c.targetIdx < c.flags.length) {
+      var ft = c.flags[c.targetIdx] ? c.flags[c.targetIdx].userData.type : "move";
+      return (ft === "hold" ? "MOVING (hold)" : ft === "attack" ? "ADVANCING" : "MOVING");
+    }
+    if (c.aiTarget) return "MANOEUVRING";
+    return "HOLDING";
+  }
+  function unitStatus(d) {
+    var c = d.cmd; if (!c) return "";
+    var s = [];
+    if (c.ko) s.push('<span class="h">KO</span>');
+    if (c.onFire) s.push('<span class="am">FIRE</span>');
+    if (d.offNet) s.push('<span class="h">OFF-NET</span>');
+    var ammo = c.ammoMax ? Math.round(100 * c.ammo / c.ammoMax) : 100;
+    if (ammo < 30) s.push('<span class="am">AMMO ' + ammo + '%</span>');
+    return s.length ? s.join(" ") : '<span class="k">OK</span>';
+  }
+  // who (friendly) currently has LOS on / is firing on a given enemy — for the spotted-enemy rows
+  function spottersOf(enemy) {
+    var eyes = [], guns = [];
+    var ed = enemy.userData;
+    units.forEach(function (u) {
+      var ud = u.userData;
+      if (ud.side !== "friend" || !ud.cmd || ud.cmd.ko) return;
+      if (hasLOS(ud.x, ud.z, ud.eye, ed.x, ed.z, ed.eye)) eyes.push(ud.name);
+      if (ud.cmd.firingTo === enemy) guns.push(ud.name);
+    });
+    return { eyes: eyes, guns: guns };
+  }
+  function renderUnitList() {
+    var body = document.getElementById("ulistBody"); if (!body || !unitListOpen) return;
+    var rows = '<table><thead><tr><th>UNIT</th><th>CLASS</th><th>ACTION</th><th>ORDERS</th><th>ENGAGING</th><th>STATUS</th><th>STRUCT</th></tr></thead><tbody>';
+    units.forEach(function (g, i) {
+      var d = g.userData; if (d.side !== "friend") return;
+      var c = d.cmd || {};
+      var orders = (c.flags && c.flags.filter(function (f) { return f; }).length)
+        ? (c.flags.filter(function (f) { return f; }).length + " flag(s)") : "—";
+      var eng = (c.firingTo && !c.firingTo.userData.cmd.ko) ? c.firingTo.userData.name : "—";
+      rows += '<tr class="urow ' + (g === selected ? "sel" : "") + '" data-i="' + i + '">' +
+        '<td>' + escapeHtml(d.name) + '</td><td>' + d.cls + '</td><td>' + unitAction(d) + '</td>' +
+        '<td>' + orders + '</td><td>' + escapeHtml(eng) + '</td><td>' + unitStatus(d) + '</td>' +
+        '<td>' + Math.round(c.struct != null ? c.struct : 100) + '%</td></tr>';
+    });
+    rows += '</tbody></table>';
+
+    // spotted enemies (any hostile a friendly has LOS on)
+    var seen = [];
+    units.forEach(function (g) {
+      var d = g.userData; if (d.side !== "hostile" || (d.cmd && d.cmd.ko)) return;
+      var sp = spottersOf(g); if (!sp.eyes.length) return;
+      seen.push({ g: g, sp: sp });
+    });
+    if (seen.length) {
+      rows += '<div class="sub">SPOTTED ENEMIES (' + seen.length + ')</div>';
+      rows += '<table><thead><tr><th>CONTACT</th><th>CLASS</th><th>SEEN BY</th><th>FIRED ON BY</th><th>RANGE</th></tr></thead><tbody>';
+      seen.forEach(function (o) {
+        var d = o.g.userData;
+        var refX = selected ? selected.userData.x : (units[0] ? units[0].userData.x : d.x);
+        var refZ = selected ? selected.userData.z : (units[0] ? units[0].userData.z : d.z);
+        var rng = Math.hypot(d.x - refX, d.z - refZ);
+        var cls = /\?/.test(d.gun || "") ? "unknown" : d.cls;
+        rows += '<tr class="foe"><td>' + escapeHtml(d.name) + '</td><td>' + cls + '</td>' +
+          '<td>\uD83D\uDC41 ' + o.sp.eyes.length + '</td><td>' + (o.sp.guns.length ? '\u2725 ' + o.sp.guns.length : "\u2014") + '</td>' +
+          '<td>' + (rng / 1000).toFixed(1) + " km</td></tr>";
+      });
+      rows += '</tbody></table>';
+    }
+    body.innerHTML = rows;
+    // click a row to select that unit
+    body.querySelectorAll("tr.urow").forEach(function (tr) {
+      tr.onclick = function () { var i = parseInt(tr.getAttribute("data-i"), 10); if (units[i]) { selectUnit(units[i]); focusUnit(units[i]); renderUnitList(); } };
+    });
+  }
+
   function renderTargetingComputer(g) {
     var box = document.getElementById("uTgtComp");
     var body = document.getElementById("tgtBody");
@@ -3007,6 +3095,10 @@
       var hid = apList.classList.toggle("hidden");
       apTog.textContent = hid ? "[ show ]" : "[ hide ]";
     };
+
+    // ---- UNIT LIST close button ----
+    var ulc = document.getElementById("ulistClose");
+    if (ulc) ulc.onclick = function () { toggleUnitList(false); };
 
     // ---- COMBAT VIEW (L1) toggle ----
     var povBtn = document.getElementById("tPov");
@@ -3298,6 +3390,10 @@
       // , / . cycle the selected unit (previous / next friendly crab). Skip if typing in the <select>.
       if ((e.key === "," || e.key === ".") && (!document.activeElement || document.activeElement.tagName !== "SELECT")) {
         cycleUnit(e.key === "," ? -1 : 1); e.preventDefault(); return;
+      }
+      // U toggles the UNIT LIST / order of battle
+      if (k === "u" && (!document.activeElement || document.activeElement.tagName !== "SELECT")) {
+        toggleUnitList(); e.preventDefault(); return;
       }
       // = / + speeds the sim up, - / _ slows it (0.25x .. 8x). Fine step of 0.25.
       if (e.key === "=" || e.key === "+") { setSimSpeed(simSpeed + 0.25); e.preventDefault(); return; }
@@ -4324,6 +4420,7 @@
       var sb = document.getElementById("tSub"); if (sb) sb.classList.add("on");
     }
     selected = units[0]; selectUnit(selected);
+    if (QS.get("ulist") === "1") toggleUnitList(true);   // for demos/screenshots
     var sd = document.getElementById("scenSel"); if (sd) sd.value = key;
     var cs = document.getElementById("cScen");
     if (cs) cs.textContent = key ? key.replace(/_/g, " ").toUpperCase() : "FREE DEPLOY";
@@ -4429,7 +4526,7 @@
 
     // decay the mini combat log over real time (re-render ~4x/sec even with no new lines)
     _clogDecayT = (_clogDecayT || 0) + dt;
-    if (cmd.on && _clogDecayT > 0.25) { _clogDecayT = 0; renderClog(); }
+    if (cmd.on && _clogDecayT > 0.25) { _clogDecayT = 0; renderClog(); if (unitListOpen) renderUnitList(); }
 
     // I4/I5: per-frame marker upkeep — fired-on red ring + ammo/status strip.
     if (cmd.on) {
