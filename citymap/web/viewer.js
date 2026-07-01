@@ -177,7 +177,7 @@
     on: false, playing: false, flagType: "move", flagship: null, scenario: "",
     selectedSet: [], objective: null, flagGroup: null, orderGroup: null, fxGroup: null,
     forceScenario: QS.get("scenario") || "", forcePlay: QS.get("play") === "1",
-    netStat: "", flagshipOffNet: false, fireTarget: null,
+    netStat: "", flagshipOffNet: false, fireTarget: null, fireGunIdx: 0,
     // auto-pause: which combat events halt the clock so the player can react (checklist in the panel)
     autoPause: { sighted: true, firedOn: true, firedAt: false, hitEnemy: false, ko: true, hitAlly: true },
     _sighted: false,   // whether first-contact has fired this battle
@@ -2780,12 +2780,44 @@
   }
 
   // F2: populate the maths FIRE SOLUTION panel for the selected gun's current/nearest target.
+  // T1/T3: the list of guns fitted to a unit (multi-gun aware). Each = {name, rangeM, charges}.
+  function unitGuns(d) {
+    var list = [];
+    if (Array.isArray(d.guns) && d.guns.length) {
+      d.guns.forEach(function (gm) { list.push({ name: gunLabel({ gun: gm.name }), rangeM: gm.rangeM }); });
+    } else {
+      list.push({ name: gunLabel(d), rangeM: d.rangeM });
+    }
+    return list;
+  }
   function updateFirePanel(g) {
     var panel = document.getElementById("firesol");
     if (!panel || !g) return;
     var d = g.userData;
     if (!cmd.on || d.side !== "friend" || !(d.rangeM > 0)) { panel.style.display = "none"; return; }
-    // pick the target: current firing target, else designated fire point, else nearest hostile in range
+    panel.style.display = "block";
+
+    // T3: gun selector — build the dropdown once per selection; use cmd.fireGunIdx.
+    var guns = unitGuns(d);
+    if (cmd.fireGunIdx == null || cmd.fireGunIdx >= guns.length) cmd.fireGunIdx = 0;
+    var sel = document.getElementById("fsGunSel");
+    var row = document.getElementById("fsGunRow");
+    if (sel) {
+      if (sel._forUnit !== d.name || sel.options.length !== guns.length) {
+        sel._forUnit = d.name; sel.innerHTML = "";
+        guns.forEach(function (gn, i) {
+          var o = document.createElement("option"); o.value = i;
+          o.textContent = gn.name + " (" + (gn.rangeM / 1000).toFixed(1) + "km)"; sel.appendChild(o);
+        });
+        sel.onchange = function () { cmd.fireGunIdx = parseInt(sel.value, 10); updateFirePanel(selected); };
+      }
+      sel.value = cmd.fireGunIdx;
+      if (row) row.style.display = guns.length > 1 ? "block" : "none";   // hide selector if single gun
+    }
+    var gun = guns[cmd.fireGunIdx] || guns[0];
+    var gunRange = gun.rangeM;
+
+    // pick the target: current firing target, else designated fire point, else nearest hostile
     var tgtName = "—", tx = null, tz = null, ty = null;
     if (d.cmd && d.cmd.firingTo && !d.cmd.firingTo.userData.cmd.ko) {
       var t = d.cmd.firingTo.userData; tx = t.x; tz = t.z; ty = t.eye; tgtName = t.name;
@@ -2800,26 +2832,43 @@
       });
       if (best) { tx = best.userData.x; tz = best.userData.z; ty = best.userData.eye; tgtName = best.userData.name; }
     }
-    if (tx == null) { panel.style.display = "none"; return; }
-    var rangeM = Math.hypot(tx - d.x, tz - d.z);
-    var high = fireModeIsHigh(d, { x: tx, z: tz, eye: ty });
-    var v = muzzleSpeed(d.rangeM);
-    var sol = fireSolution(v, Math.min(rangeM, d.rangeM), high);
-    var frac = rangeM / d.rangeM;
-    panel.style.display = "block";
-    document.getElementById("fsMode").textContent = "// " + (high ? "HIGH-ANGLE / INDIRECT" : "DIRECT");
     document.getElementById("fsTgt").textContent = tgtName;
-    document.getElementById("fsRange").textContent = (rangeM / 1000).toFixed(2) + " km";
-    document.getElementById("fsVel").textContent = Math.round(v) + " m/s";
-    document.getElementById("fsElev").textContent = sol.elevDeg.toFixed(1) + "\u00B0";
-    document.getElementById("fsFall").textContent = sol.fallDeg.toFixed(1) + "\u00B0";
-    document.getElementById("fsTof").textContent = sol.tof.toFixed(1) + " s";
-    document.getElementById("fsApex").textContent = Math.round(sol.apex) + " m";
-    document.getElementById("fsCharge").textContent = chargeZone(clamp(frac, 0, 1));
-    document.getElementById("fsZone").textContent = hitZone(rangeM, d.rangeM);
-    document.getElementById("fsHint").textContent = rangeM > d.rangeM
-      ? "TARGET BEYOND MAX RANGE — cannot reach."
-      : (high ? "Lobbed over terrain; steep fall strikes the DECK." : "Flat, fast; shallow fall strikes the SIDE/GLACIS.");
+    var fields = ["fsRange", "fsVel", "fsElev", "fsFall", "fsTof", "fsApex", "fsCharge", "fsZone"];
+    function setF(id, v) { var e = document.getElementById(id); if (e) e.textContent = v; }
+    if (tx == null) { fields.forEach(function (f) { setF(f, "\u2014"); }); document.getElementById("fsMode").textContent = ""; document.getElementById("fsHint").textContent = "no target"; return; }
+
+    var rangeM = Math.hypot(tx - d.x, tz - d.z);
+    // T2: CANNOT REACH — if beyond THIS gun's max range, say so plainly and blank the numbers.
+    if (rangeM > gunRange) {
+      document.getElementById("fsMode").textContent = "// " + gun.name;
+      setF("fsRange", (rangeM / 1000).toFixed(2) + " km");
+      ["fsVel", "fsElev", "fsFall", "fsTof", "fsApex", "fsCharge", "fsZone"].forEach(function (f) { setF(f, "\u2014"); });
+      document.getElementById("fsHint").innerHTML = '<span class="warn">CANNOT REACH</span> \u2014 target ' +
+        ((rangeM - gunRange) / 1000).toFixed(1) + " km beyond " + gun.name + " max range.";
+      return;
+    }
+    var high = fireModeIsHigh(d, { x: tx, z: tz, eye: ty });
+    var v = muzzleSpeed(gunRange);
+    var sol = fireSolution(v, rangeM, high);
+    var frac = rangeM / gunRange;
+    document.getElementById("fsMode").textContent = "// " + gun.name + " \u00B7 " + (high ? "HIGH-ANGLE" : "DIRECT");
+    setF("fsRange", (rangeM / 1000).toFixed(2) + " km");
+    setF("fsVel", Math.round(v) + " m/s");
+    setF("fsElev", sol.elevDeg.toFixed(1) + "\u00B0");
+    setF("fsFall", sol.fallDeg.toFixed(1) + "\u00B0");
+    setF("fsTof", sol.tof.toFixed(1) + " s");
+    setF("fsApex", Math.round(sol.apex) + " m");
+    setF("fsCharge", chargeForGun(gun, frac));
+    setF("fsZone", hitZone(rangeM, gunRange));
+    document.getElementById("fsHint").textContent = high
+      ? "Lobbed over terrain; steep fall strikes the DECK." : "Flat, fast; shallow fall strikes the SIDE/GLACIS.";
+  }
+  // T1: a realistic propellant CHARGE / ZONE label for a specific gun at a range fraction. Bigger
+  // guns have more charge zones; the zone is chosen so the shot just reaches (min charge that works).
+  function chargeForGun(gun, frac) {
+    var zones = gun.rangeM > 8000 ? 8 : gun.rangeM > 5000 ? 7 : gun.rangeM > 3000 ? 5 : 4;
+    var z = Math.max(1, Math.ceil(clamp(frac, 0.01, 1) * zones));
+    return "ZONE " + z + "/" + zones;
   }
 
   function renderTargetingComputer(g) {
@@ -2875,6 +2924,7 @@
     document.getElementById("uNote").textContent = d.note;
     updateUnitFacing(g);
     renderTargetingComputer(g);
+    cmd.fireGunIdx = 0;   // reset to primary gun when selecting a new unit
     updateFirePanel(g);
     rebuildOverlays();
     refreshCommsLine(g);
@@ -4173,6 +4223,12 @@
     var d = g.userData;
     d.name = name; d.side = side; d.cls = cls; d.gun = gun; d.rangeM = rangeM;
     d.note = note;
+    // T3: give heavier crabs a SECONDARY gun so the multi-gun fire-solution selector is exercised.
+    // Primary = the main gun (full range); secondary = a shorter, faster-firing mount.
+    if (side === "friend" && (cls === "Siege" || cls === "Line")) {
+      var sec = cls === "Siege" ? { name: "SB-88 secondary", rangeM: 3600 } : { name: "AC-40 autocannon", rangeM: 2200 };
+      d.guns = [{ name: gun, rangeM: rangeM }, sec];
+    } else { d.guns = null; }
     var ny = heightAt(clamp(x,0,map.size_m[0]), clamp(z,0,map.size_m[1]));
     d.x = x; d.z = z; g.position.set(x, ny, z);
     d.eye = ny + d._eyeOff;
