@@ -3212,6 +3212,31 @@
       };
     }
 
+    // ---- R5: DRAGGABLE PANELS — grab a panel's header to move it; layout persists in localStorage ----
+    enablePanelDragging();
+
+    // ---- R6: TITLE MENU (panels / hotkeys / tutorial) ----
+    var tmBtn = document.getElementById("titleMenuBtn"), tMenu = document.getElementById("titleMenu");
+    var SIDE_PANELS = ["legend", "wx", "unit", "cmd", "clog", "firesol", "compassHud"];
+    if (tmBtn && tMenu) {
+      tmBtn.onclick = function (e) { e.stopPropagation(); tMenu.style.display = tMenu.style.display === "none" ? "block" : "none"; };
+      document.addEventListener("click", function () { tMenu.style.display = "none"; });
+      tMenu.addEventListener("click", function (e) {
+        var act = e.target.getAttribute("data-act"); if (!act) return;
+        if (act === "panels-show") SIDE_PANELS.forEach(function (id) { var p = document.getElementById(id); if (p) p.style.display = ""; });
+        else if (act === "panels-hide") ["legend", "wx", "clog", "firesol"].forEach(function (id) { var p = document.getElementById(id); if (p) p.style.display = "none"; });
+        else if (act === "layout-reset") { if (window._cbResetPanels) window._cbResetPanels(); }
+        else if (act === "unitlist") toggleUnitList(true);
+        else if (act === "hotkeys") { var hk = document.getElementById("hotkeys"); if (hk) hk.style.display = "flex"; }
+        else if (act === "tutorial") window.open("../tutorial/index.html", "_blank");
+        tMenu.style.display = "none";
+      });
+    }
+    var hkClose = document.getElementById("hotkeysClose");
+    if (hkClose) hkClose.onclick = function () { document.getElementById("hotkeys").style.display = "none"; };
+    var hkOverlay = document.getElementById("hotkeys");
+    if (hkOverlay) hkOverlay.addEventListener("click", function (e) { if (e.target === hkOverlay) hkOverlay.style.display = "none"; });
+
     // ---- UNIT LIST close button ----
     var ulc = document.getElementById("ulistClose");
     if (ulc) ulc.onclick = function () { toggleUnitList(false); };
@@ -3494,6 +3519,52 @@
   // ---------- FLY CAMERA ----------
   // Free-fly WASDQE/RF camera. While active, OrbitControls is disabled (so they don't fight) and
   // we drive camera.position + a yaw/pitch look direction each frame from held keys + mouse-drag.
+  // R5: make every .panel draggable by its header (.hdr). Saves left/top per panel-id so the
+  // player's arranged layout persists across reloads. A small "grip" cue is added to each header.
+  function enablePanelDragging() {
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem("cb_panel_pos") || "{}"); } catch (e) {}
+    function persist() { try { localStorage.setItem("cb_panel_pos", JSON.stringify(saved)); } catch (e) {} }
+    var panels = document.querySelectorAll(".panel");
+    panels.forEach(function (p) {
+      var hdr = p.querySelector(".hdr"); if (!hdr) return;
+      var id = p.id || ""; if (!id) return;
+      hdr.style.cursor = "move";
+      if (!hdr.querySelector(".grip")) {
+        var grip = document.createElement("span");
+        grip.className = "grip"; grip.textContent = "\u2630";   // ☰ handle cue
+        grip.style.cssText = "float:left;margin-right:6px;color:var(--dim);opacity:.5;font-size:10px";
+        hdr.insertBefore(grip, hdr.firstChild);
+      }
+      // restore saved position
+      if (saved[id]) { p.style.left = saved[id].left; p.style.top = saved[id].top;
+        p.style.right = "auto"; p.style.bottom = "auto"; p.style.transform = "none"; }
+      var drag = null;
+      hdr.addEventListener("pointerdown", function (e) {
+        if (e.target.closest("button,select,input,a,.tw,.info")) return;   // don't drag from controls
+        var r = p.getBoundingClientRect();
+        drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+        p.style.left = r.left + "px"; p.style.top = r.top + "px";
+        p.style.right = "auto"; p.style.bottom = "auto"; p.style.transform = "none";
+        p.style.zIndex = 40;
+        hdr.setPointerCapture(e.pointerId); e.preventDefault();
+      });
+      hdr.addEventListener("pointermove", function (e) {
+        if (!drag) return;
+        var nx = clamp(e.clientX - drag.dx, 0, innerWidth - 60);
+        var ny = clamp(e.clientY - drag.dy, 0, innerHeight - 24);
+        p.style.left = nx + "px"; p.style.top = ny + "px";
+      });
+      hdr.addEventListener("pointerup", function (e) {
+        if (!drag) return; drag = null;
+        try { hdr.releasePointerCapture(e.pointerId); } catch (er) {}
+        saved[id] = { left: p.style.left, top: p.style.top }; persist();
+      });
+    });
+    // expose a reset so the title menu can restore default layout
+    window._cbResetPanels = function () { saved = {}; persist(); location.reload(); };
+  }
+
   function bindFly() {
     addEventListener("keydown", function (e) {
       var k = e.key.toLowerCase();

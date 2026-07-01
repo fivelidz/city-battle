@@ -171,6 +171,17 @@
   #events .ev .a{color:var(--teal)} #events .ev .h{color:var(--red)}
   @keyframes evfade{0%{opacity:0;transform:translateY(-6px)}10%{opacity:1;transform:translateY(0)}
     75%{opacity:1}100%{opacity:0;transform:translateY(-4px)}}
+  /* R6: title dropdown menu */
+  #titleMenu{position:fixed;top:34px;left:14px;z-index:50;background:rgba(13,17,16,.97);
+    border:1px solid var(--hair);min-width:180px;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+  #titleMenu .mi{padding:7px 12px;font-size:11px;color:var(--ink);cursor:pointer;letter-spacing:.03em}
+  #titleMenu .mi:hover{background:rgba(120,140,130,.14);color:var(--amber)}
+  #titleMenu .msep{height:1px;background:var(--hair);margin:2px 0}
+  /* R6: hotkeys overlay */
+  #hotkeys{position:fixed;inset:0;z-index:60;background:rgba(6,8,7,.6);display:flex;align-items:center;justify-content:center}
+  .hkgrid{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin-top:8px;font-size:11px;align-items:baseline}
+  .hkgrid b{color:var(--teal);font-weight:bold;white-space:nowrap}
+  .hkgrid span{color:var(--dim)}
   /* S1: UNIT LIST panel (press U) — a compact spreadsheet, centre-ish, draggable */
   #ulist{position:fixed;top:70px;left:50%;transform:translateX(-50%);width:560px;max-height:70vh;
     z-index:18;overflow:hidden;display:flex;flex-direction:column}
@@ -213,10 +224,42 @@
 <div id="load">LOADING SYDNEY TACTICAL MAP&hellip;</div>
 
 <div class="panel" id="top">
-  <span class="t">CITY BATTLE</span><span class="dim" style="font-size:11px">// TACTICAL MAP</span>
+  <span class="t" id="titleMenuBtn" style="cursor:pointer" title="Menu">CITY BATTLE &#9662;</span><span class="dim" style="font-size:11px">// TACTICAL MAP</span>
   <span id="cityName" class="k" style="font-size:11px"></span>
   <span id="commsTop" class="k" style="font-size:11px;color:var(--teal);display:none;letter-spacing:.12em"></span>
   <span class="r" id="status">SECTOR SCAN</span>
+</div>
+
+<!-- R6: title dropdown menu -->
+<div id="titleMenu" style="display:none">
+  <div class="mi" data-act="panels-show">Show all panels</div>
+  <div class="mi" data-act="panels-hide">Hide side panels</div>
+  <div class="mi" data-act="layout-reset">Reset panel layout</div>
+  <div class="msep"></div>
+  <div class="mi" data-act="unitlist">Unit list (U)</div>
+  <div class="mi" data-act="hotkeys">Hotkeys&hellip;</div>
+  <div class="mi" data-act="tutorial">Tutorial &amp; guide</div>
+</div>
+
+<!-- R6: hotkeys overlay -->
+<div id="hotkeys" style="display:none">
+  <div class="panel" style="max-width:420px">
+    <div class="hdr">Hotkeys <span class="tw" id="hotkeysClose" style="float:right;cursor:pointer;color:var(--dim)">[ close ]</span></div>
+    <div class="hkgrid">
+      <b>SPACE</b><span>play / pause the clock</span>
+      <b>= / -</b><span>faster / slower sim speed</span>
+      <b>U</b><span>unit list (order of battle)</span>
+      <b>F</b><span>toggle fly camera</span>
+      <b>WASD / RE / Q</b><span>fly: move / up / down</span>
+      <b>WHEEL</b><span>zoom &middot; SHIFT+wheel = fly speed</span>
+      <b>&larr; &rarr; , .</b><span>cycle selected unit</span>
+      <b>1 / 2 / 3</b><span>order type: move / hold / attack</span>
+      <b>L-click</b><span>select unit</span>
+      <b>R-click</b><span>drop move/attack flag &middot; SHIFT+R = waypoint</span>
+      <b>CTRL/ALT-click</b><span>designate a fire mission</span>
+      <b>drag panel header</b><span>move panels (layout saved)</span>
+    </div>
+  </div>
 </div>
 
 <div class="panel" id="left">
