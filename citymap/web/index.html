@@ -185,8 +185,10 @@
   #titleMenu .mi{padding:7px 12px;font-size:11px;color:var(--ink);cursor:pointer;letter-spacing:.03em}
   #titleMenu .mi:hover{background:rgba(120,140,130,.14);color:var(--amber)}
   #titleMenu .msep{height:1px;background:var(--hair);margin:2px 0}
-  /* R6: hotkeys overlay */
-  #hotkeys{position:fixed;inset:0;z-index:60;background:rgba(6,8,7,.6);display:flex;align-items:center;justify-content:center}
+  /* R6/AB2: hotkeys + options overlays */
+  #hotkeys,#optionsPanel{position:fixed;inset:0;z-index:60;background:rgba(6,8,7,.6);display:flex;align-items:center;justify-content:center}
+  .opt{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink);line-height:2;cursor:pointer}
+  .opt input{accent-color:var(--amber);width:13px;height:13px}
   .hkgrid{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin-top:8px;font-size:11px;align-items:baseline}
   .hkgrid b{color:var(--teal);font-weight:bold;white-space:nowrap}
   .hkgrid span{color:var(--dim)}
@@ -245,8 +247,26 @@
   <div class="mi" data-act="layout-reset">Reset panel layout</div>
   <div class="msep"></div>
   <div class="mi" data-act="unitlist">Unit list (U)</div>
+  <div class="mi" data-act="options">Gameplay options&hellip;</div>
   <div class="mi" data-act="hotkeys">Hotkeys&hellip;</div>
-  <div class="mi" data-act="tutorial">Tutorial &amp; guide</div>
+  <div class="msep"></div>
+  <div class="mi" data-act="wiki">Field Wiki</div>
+  <div class="mi" data-act="tutorial">Artillery tutorial</div>
+</div>
+
+<!-- AB2: gameplay options overlay -->
+<div id="optionsPanel" style="display:none">
+  <div class="panel" style="max-width:360px">
+    <div class="hdr">Gameplay Options <span class="tw" id="optClose" style="float:right;cursor:pointer;color:var(--dim)">[ close ]</span></div>
+    <label class="opt"><input type="checkbox" id="optSound"> Sound effects</label>
+    <label class="opt"><input type="checkbox" id="optAutopause" checked> Enable auto-pause</label>
+    <label class="opt"><input type="checkbox" id="optArcs" checked> Show fire trajectory arcs</label>
+    <label class="opt"><input type="checkbox" id="optPov" checked> Combat POV inset</label>
+    <label class="opt"><input type="checkbox" id="optNames" checked> Unit name labels</label>
+    <div class="row" style="margin-top:8px"><span class="dim" style="font-size:10px">DEFAULT SIM SPEED</span></div>
+    <input type="range" id="optSpeed" min="0.25" max="4" step="0.25" value="1" style="width:100%">
+    <div class="row dim" id="optSpeedRead" style="font-size:10px">1&times;</div>
+  </div>
 </div>
 
 <!-- R6: hotkeys overlay -->

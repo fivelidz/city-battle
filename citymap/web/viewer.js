@@ -95,6 +95,7 @@
   // I1/R3: unit-marker size + on/off. SMALL by default (cycle SMALL -> FULL -> OFF via MARKERS btn).
   var markerScale = 0.6, markersOn = true;
   var namesOn = true;   // AC5: unit name labels on/off
+  var arcsOn = true;    // AB2 option: show fire trajectory arcs
   // G2: threat gun for the immunity-band calc (name + max reach). "AUTO" uses the enemy on-map.
   var THREAT_GUNS = [
     { name: "AUTO (on-map enemy)", rangeM: 0 },
@@ -3242,6 +3243,8 @@
         else if (act === "layout-reset") { if (window._cbResetPanels) window._cbResetPanels(); }
         else if (act === "unitlist") toggleUnitList(true);
         else if (act === "hotkeys") { var hk = document.getElementById("hotkeys"); if (hk) hk.style.display = "flex"; }
+        else if (act === "options") { var op = document.getElementById("optionsPanel"); if (op) op.style.display = "flex"; }
+        else if (act === "wiki") window.open("wiki/index.html", "_blank");
         else if (act === "tutorial") window.open("../tutorial/index.html", "_blank");
         tMenu.style.display = "none";
       });
@@ -3250,6 +3253,29 @@
     if (hkClose) hkClose.onclick = function () { document.getElementById("hotkeys").style.display = "none"; };
     var hkOverlay = document.getElementById("hotkeys");
     if (hkOverlay) hkOverlay.addEventListener("click", function (e) { if (e.target === hkOverlay) hkOverlay.style.display = "none"; });
+
+    // ---- AB2: gameplay OPTIONS overlay ----
+    var opPanel = document.getElementById("optionsPanel"), opClose = document.getElementById("optClose");
+    if (opClose) opClose.onclick = function () { opPanel.style.display = "none"; };
+    if (opPanel) opPanel.addEventListener("click", function (e) { if (e.target === opPanel) opPanel.style.display = "none"; });
+    function bindOpt(id, get, set) {
+      var el = document.getElementById(id); if (!el) return;
+      el.checked = get();
+      el.onchange = function () { set(el.checked); };
+    }
+    bindOpt("optSound", function () { return soundOn; }, function (v) { soundOn = v; var b = document.getElementById("tSound"); if (b) b.classList.toggle("on", v); });
+    bindOpt("optAutopause", function () { return cmd.autoPause.sighted || cmd.autoPause.firedOn; }, function (v) {
+      ["sighted", "firedOn", "ko", "hitAlly"].forEach(function (k) { cmd.autoPause[k] = v; });
+      ["apSighted", "apFiredOn", "apKO", "apHitAlly"].forEach(function (id) { var c = document.getElementById(id); if (c) c.checked = v; });
+    });
+    bindOpt("optArcs", function () { return arcsOn; }, function (v) { arcsOn = v; });
+    bindOpt("optPov", function () { return povOn; }, function (v) { povOn = v; var b = document.getElementById("tPov"); if (b) b.classList.toggle("on", v); });
+    bindOpt("optNames", function () { return namesOn; }, function (v) {
+      namesOn = v; var b = document.getElementById("tNames"); if (b) b.classList.toggle("on", v);
+      units.forEach(function (g) { if (g.userData.label) g.userData.label.visible = namesOn && markersOn; });
+    });
+    var opSpeed = document.getElementById("optSpeed"), opSpeedRead = document.getElementById("optSpeedRead");
+    if (opSpeed) { opSpeed.value = simSpeed; opSpeed.oninput = function () { setSimSpeed(parseFloat(opSpeed.value)); if (opSpeedRead) opSpeedRead.textContent = fmtSpeed(simSpeed) + "\u00D7"; }; }
 
     // ---- UNIT LIST close button ----
     var ulc = document.getElementById("ulistClose");
@@ -3890,7 +3916,7 @@
       var ch = cmd.trajGroup.children[0];
       cmd.trajGroup.remove(ch); if (ch.geometry) ch.geometry.dispose(); if (ch.material) ch.material.dispose();
     }
-    if (!cmd.on) return;
+    if (!cmd.on || !arcsOn) return;   // AB2 option: arcs can be turned off
     units.forEach(function (g) {
       var d = g.userData, c = d.cmd;
       if (!c || c.ko || !c.firingTo || c.firingTo.userData.cmd.ko) return;
