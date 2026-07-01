@@ -2441,6 +2441,7 @@
 
   function setOffNet(g, off) {
     var d = g.userData;
+    d.offNet = off;                     // O1: used by hasSpotter (off-net units can't relay corrections)
     if (d.offRing) d.offRing.visible = off;
     if (d.offTag) d.offTag.visible = off;
     // dim the whole crab + marker when off net (ghost)
@@ -3440,7 +3441,8 @@
       var d = g.userData, c = d.cmd;
       if (!c || c.ko || !c.firingTo || c.firingTo.userData.cmd.ko) return;
       var tgt = c.firingTo.userData;
-      var high = fireModeIsHigh(d, tgt);
+      // use the actual engagement trajectory if known, else fall back to the LOS heuristic
+      var high = c.fireSol ? (c.fireSol.mode !== "direct") : fireModeIsHigh(d, tgt);
       var pts = trajectoryPoints(d.x, d.eye + 6, d.z, tgt.x, tgt.eye + 4, tgt.z, high, 26);
       var col = d.side === "friend" ? 0xe8a838 : 0xd75a52;
       var geo = new THREE.BufferGeometry().setFromPoints(pts);
@@ -3770,6 +3772,49 @@
   // (item G14): any armed unit with an enemy in range + LOS engages it, even en route to a flag.
   // A HOLD order makes a unit hold fire (overwatch only fires if attacked); everything else fires
   // reactively. dps is much lower now (item G13) so kills take a satisfying time.
+  // O1: does the SHOOTER have a working firing solution on the TARGET, and by which trajectory?
+  // Returns { mode, dmgMult } or null. DIRECT needs direct LOS; INDIRECT needs an arc that clears
+  // terrain AND a spotter (any on-net friendly of the shooter's side with LOS to the target);
+  // HIGH-ANGLE needs the (shorter) lob arc to reach. Damage scales down for indirect/high-angle
+  // (looser than aimed direct fire — ref doctrine accuracy ladder).
+  function engagementSolution(shooter, tgt, dist) {
+    if (!terrainField) return { mode: "direct", dmgMult: 1 };
+    var t = map.terrain, res = t.res, H = t.heights, cell = t.cell_m;
+    var rz = map.size_m[1] / (res - 1);
+    var ex = shooter.x, ez = shooter.z, ey = shooter.eye + 6;
+    var tx = tgt.x, tz = tgt.z, ty = tgt.eye + 3;
+    var v = muzzleSpeed(shooter.rangeM);
+    // 1) DIRECT — flat, needs true LOS
+    if (hasLOS(shooter.x, shooter.z, shooter.eye, tgt.x, tgt.z, tgt.eye)) {
+      var pd = trajParams("direct");
+      if (canHit(ex, ez, ey, tx, tz, ty, res, H, cell, rz, v, pd, shooter.rangeM * pd.reachMul))
+        return { mode: "direct", dmgMult: 1.0 };
+    }
+    // 2) INDIRECT — arced; needs a spotter (on-net friendly seeing the target) + arc clears terrain
+    var pi = trajParams("indirect");
+    if (dist <= shooter.rangeM * pi.reachMul && hasSpotter(shooter, tgt) &&
+        canHit(ex, ez, ey, tx, tz, ty, res, H, cell, rz, v, pi, shooter.rangeM * pi.reachMul))
+      return { mode: "indirect", dmgMult: 0.7 };
+    // 3) HIGH-ANGLE / MORTAR — short range plunge into defilade; needs a spotter too
+    var pm = trajParams("mortar");
+    if (dist <= shooter.rangeM * pm.reachMul && hasSpotter(shooter, tgt) &&
+        canHit(ex, ez, ey, tx, tz, ty, res, H, cell, rz, v, pm, shooter.rangeM * pm.reachMul))
+      return { mode: "mortar", dmgMult: 0.55 };
+    return null;
+  }
+  // A spotter = the shooter itself has LOS, OR any living on-net friendly of the same side has LOS
+  // to the target (so indirect fire can be observed & corrected).
+  function hasSpotter(shooter, tgt) {
+    if (hasLOS(shooter.x, shooter.z, shooter.eye, tgt.x, tgt.z, tgt.eye)) return true;
+    for (var i = 0; i < units.length; i++) {
+      var od = units[i].userData;
+      if (od === shooter || od.side !== shooter.side || !od.cmd || od.cmd.ko) continue;
+      if (od.offNet) continue;                          // off the comms net -> can't relay a correction
+      if (hasLOS(od.x, od.z, od.eye, tgt.x, tgt.z, tgt.eye)) return true;
+    }
+    return false;
+  }
+
   function stepEngage(g, dt) {
     var d = g.userData, c = d.cmd;
     if (d.side === "civ" || d.rangeM <= 0) { stopFiring(g); return; }
@@ -3778,24 +3823,30 @@
     var holdFire = (lastFlag && lastFlag.type === "hold") && !d._engageAll;
     // friendly engages hostiles; hostile engages friendlies (so the demo fights back)
     var enemySide = d.side === "friend" ? "hostile" : "friend";
-    var target = null, bestD = Infinity;
+    // O1: BALLISTIC engageability — a unit can engage only if some trajectory actually reaches the
+    // target through terrain: DIRECT (needs LOS), INDIRECT (arced, needs a spotter on the net with
+    // LOS), or HIGH-ANGLE/MORTAR (short range, plunges into defilade). Flat-LOS-only is gone.
+    var target = null, bestD = Infinity, bestSol = null;
     units.forEach(function (e) {
       if (e === g) return;
       var ed = e.userData;
       if (ed.side !== enemySide || ed.cmd.ko) return;
       var dist = Math.hypot(ed.x - d.x, ed.z - d.z);
-      if (dist > d.rangeM) return;                       // OUT OF RANGE: cannot engage (item C)
-      if (!hasLOS(d.x, d.z, d.eye, ed.x, ed.z, ed.eye)) return;
-      if (dist < bestD) { bestD = dist; target = e; }
+      if (dist > d.rangeM) return;                       // OUT OF RANGE: cannot engage
+      var sol = engagementSolution(d, ed, dist);
+      if (!sol) return;                                  // masked / no arc reaches / no spotter
+      if (dist < bestD) { bestD = dist; target = e; bestSol = sol; }
     });
     if (target && !holdFire) {
+      c.fireSol = bestSol;                               // remember trajectory used (for arcs/log)
       var firstShot = (c.firingTo !== target);
       c.firingTo = target;
       target.userData._firedOn = true;            // I4: mark target as being fired on this frame
-      // hit model: damage rate scales with closeness within range
+      // hit model: damage rate scales with closeness within range AND the trajectory's accuracy
+      // (direct is tightest; indirect/high-angle are looser — ref doctrine accuracy ladder).
       var rangeFrac = bestD / d.rangeM;            // 0=point blank, 1=max range
-      var dps = (1.2 + 3.0 * (1 - rangeFrac));     // 1.2..4.2 struct/sec — SLOW so battles last
-                                                   // long enough to watch arcs/POV and manoeuvre
+      var solMult = (bestSol && bestSol.dmgMult) ? bestSol.dmgMult : 1;
+      var dps = (1.2 + 3.0 * (1 - rangeFrac)) * solMult;   // SLOW so battles last long enough to watch
       var td = target.userData.cmd;
       var before = td.struct;
       td.struct -= dps * dt;
@@ -3808,9 +3859,10 @@
         var gun = gunLabel(d);                        // which armament fired
         var shooterCls = d.side === "friend" ? "a" : "h";
         var tgtCls = target.userData.side === "friend" ? "a" : "h";
+        var trajTxt = c.fireSol ? (c.fireSol.mode === "direct" ? "DIRECT" : c.fireSol.mode === "indirect" ? "INDIRECT" : "HIGH-ANGLE") : "";
         if (firstShot) {
           combatLog('<span class="' + shooterCls + '">' + d.name + '</span> engages <span class="' +
-                    tgtCls + '">' + target.userData.name + '</span> <span class="dim">[' + gun + ']</span>',
+                    tgtCls + '">' + target.userData.name + '</span> <span class="dim">[' + gun + (trajTxt ? " \u00B7 " + trajTxt : "") + ']</span>',
                     d.side === "friend" ? "friend" : "");
         } else if (Math.floor(before / 20) !== Math.floor(td.struct / 20)) {
           // K1/K2: log WHO hit WHAT with WHICH gun; for FRIENDLY fire record the impact ZONE.
@@ -3828,7 +3880,7 @@
     }
   }
   function stopFiring(g) {
-    var c = g.userData.cmd; if (c) { c.firingTo = null; c.fireTimer = 0; }
+    var c = g.userData.cmd; if (c) { c.firingTo = null; c.fireTimer = 0; c.fireSol = null; }
   }
   // A short armament label for the combat log (strips any trailing "(18km)" range tag).
   function gunLabel(d) {
