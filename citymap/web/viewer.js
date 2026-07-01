@@ -89,6 +89,8 @@
   var unitsGroup = null, overlayGroup = null, wireMesh = null;
   var windGroup = null, rainGroup = null, suburbGroup = null, compassGroup = null;
   var units = [], selected = null;
+  // I1: unit-marker size + on/off (cycled by the MARKERS view button: full -> small -> off)
+  var markerScale = 1.0, markersOn = true;
   var show = { los: true, range: true, bld: true, roads: QS.get("roads") !== "0", wire: false, wind: false, rain: false,
                suburbs: QS.get("suburbs") !== "0", fogcull: QS.get("fogcull") === "1",
                subnames: QS.get("names") === "1",
@@ -1866,24 +1868,44 @@
     var markerTex = makeUnitMarkerTexture(side, mkCol);
     var mkMat = new THREE.SpriteMaterial({ map: markerTex, transparent: true, depthTest: false, depthWrite: false });
     var marker = new THREE.Sprite(mkMat);
-    var mkSize = Math.max(260, span * 0.050);
+    // I1: SMALLER markers, closer to the unit (scaled by markerScale, adjustable/off via view button)
+    var mkSize = Math.max(150, span * 0.030) * markerScale;
     marker.scale.set(mkSize, mkSize, 1);
-    marker.position.y = unitLen * 1.4 + mkSize * 0.55;
+    marker.position.y = unitLen * 1.2 + mkSize * 0.5;
     marker.renderOrder = 20;
     g.add(marker);
+
+    // I3: SELECTION outline — yellow/black ring, shown only for the selected unit.
+    var selMat = new THREE.SpriteMaterial({ map: makeOutlineRingTexture(0xf5c518, 0x101010), transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
+    var selRing = new THREE.Sprite(selMat);
+    selRing.scale.set(mkSize * 1.5, mkSize * 1.5, 1);
+    selRing.position.copy(marker.position); selRing.renderOrder = 19; g.add(selRing);
+
+    // I4: FIRED-ON outline — red ring, shown when this unit is currently being fired on.
+    var firedMat = new THREE.SpriteMaterial({ map: makeOutlineRingTexture(0xe8402c, 0x2a0a08), transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
+    var firedRing = new THREE.Sprite(firedMat);
+    firedRing.scale.set(mkSize * 1.9, mkSize * 1.9, 1);
+    firedRing.position.copy(marker.position); firedRing.renderOrder = 18; g.add(firedRing);
 
     // selection halo behind the marker (hidden until selected; pulses in animate())
     var haloTex = makeHaloTexture(mkCol);
     var haloMat = new THREE.SpriteMaterial({ map: haloTex, transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
     var halo = new THREE.Sprite(haloMat);
-    halo.scale.set(mkSize * 2.2, mkSize * 2.2, 1);
+    halo.scale.set(mkSize * 2.0, mkSize * 2.0, 1);
     halo.position.copy(marker.position);
-    halo.renderOrder = 19;
+    halo.renderOrder = 17;
     g.add(halo);
+
+    // I5: STATUS strip — ammo bar + status glyph (KO/FIRE), a small canvas sprite under the marker.
+    var statMat = new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false });
+    var statusSprite = new THREE.Sprite(statMat);
+    statusSprite.scale.set(mkSize * 1.4, mkSize * 0.42, 1);
+    statusSprite.position.y = marker.position.y - mkSize * 0.7;
+    statusSprite.renderOrder = 22; g.add(statusSprite);
 
     // name label above the marker
     var label = makeLabelSprite(name, span);
-    label.position.y = marker.position.y + mkSize * 0.85;
+    label.position.y = marker.position.y + mkSize * 0.7;
     label.material.depthTest = false; label.renderOrder = 21;
     g.add(label);
 
@@ -1903,6 +1925,8 @@
 
     g.userData = { name: name, side: side, cls: cls, gun: gun, rangeM: rangeM, note: note, x: x, z: z, eye: y + unitLen * 0.3,
                    marker: marker, mkMat: mkMat, halo: halo, haloMat: haloMat, label: label, labelMat: label.material,
+                   selRing: selRing, selMat: selMat, firedRing: firedRing, firedMat: firedMat,
+                   statusSprite: statusSprite, statMat: statMat, _statusKey: "",
                    offRing: offRing, offTag: offTag, baseMkY: marker.position.y, mkSize: mkSize,
                    _eyeOff: unitLen * 0.3, struct: 100 };
     unitsGroup.add(g);
@@ -1947,6 +1971,65 @@
     ctx.shadowBlur = 0; ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.beginPath(); ctx.arc(c2, c2, 7, 0, Math.PI * 2); ctx.fill();
     var tex = new THREE.CanvasTexture(cv); tex.needsUpdate = true; return tex;
+  }
+
+  // I3/I4: a bold outline RING (coloured ring with a dark inner border) for selection / fired-on.
+  function makeOutlineRingTexture(colInt, darkInt) {
+    var S = 128, cv = document.createElement("canvas"); cv.width = cv.height = S;
+    var ctx = cv.getContext("2d"), c2 = S / 2;
+    var col = "#" + ("000000" + colInt.toString(16)).slice(-6);
+    var dark = "#" + ("000000" + (darkInt || 0x101010).toString(16)).slice(-6);
+    // dark halo first (so the bright ring reads on any background), then the bright ring
+    ctx.lineWidth = 16; ctx.strokeStyle = dark;
+    ctx.beginPath(); ctx.arc(c2, c2, c2 - 14, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 9; ctx.strokeStyle = col;
+    ctx.beginPath(); ctx.arc(c2, c2, c2 - 14, 0, Math.PI * 2); ctx.stroke();
+    var tex = new THREE.CanvasTexture(cv); tex.needsUpdate = true; return tex;
+  }
+  // I5: draw the ammo bar + status glyph strip for a unit (cached by a key to avoid re-drawing).
+  function updateStatusSprite(g) {
+    var d = g.userData, c = d.cmd; if (!d.statMat) return;
+    var ammo = c && c.ammoMax ? clamp(c.ammo / c.ammoMax, 0, 1) : 1;
+    var st = c && c.ko ? "KO" : (c && c.onFire ? "FIRE" : "");
+    var key = (ammo * 100 | 0) + "|" + st;
+    if (d._statusKey === key) return; d._statusKey = key;
+    var W = 128, H = 40, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    var ctx = cv.getContext("2d");
+    // ammo bar
+    ctx.fillStyle = "rgba(10,14,12,0.85)"; ctx.fillRect(6, 22, 116, 12);
+    ctx.fillStyle = ammo > 0.3 ? "#c8a24a" : "#d75a52"; ctx.fillRect(7, 23, 114 * ammo, 10);
+    ctx.strokeStyle = "rgba(160,180,170,0.5)"; ctx.lineWidth = 1; ctx.strokeRect(6, 22, 116, 12);
+    // status glyph
+    if (st) {
+      ctx.font = "bold 20px DejaVu Sans Mono, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = st === "KO" ? "#9a3a33" : "#e8802c";
+      ctx.fillText(st === "KO" ? "\u2716 KO" : "\u25B2 FIRE", W / 2, 11);
+    }
+    if (d.statMat.map) d.statMat.map.dispose();
+    d.statMat.map = new THREE.CanvasTexture(cv); d.statMat.map.needsUpdate = true;
+    d.statusSprite.visible = markersOn;
+  }
+
+  // I1: apply the current markerScale / markersOn to every unit's marker + rings + label + status.
+  function applyMarkerScale() {
+    var span = map ? Math.max(map.size_m[0], map.size_m[1]) : 10000;
+    units.forEach(function (g) {
+      var d = g.userData; if (!d.marker) return;
+      var base = Math.max(150, span * 0.030) * markerScale;
+      d.mkSize = base;
+      var y = (d._eyeOff ? d._eyeOff / 0.3 * 1.2 : 12) + base * 0.5;   // approx marker height
+      d.marker.scale.set(base, base, 1); d.marker.position.y = d.baseMkY;
+      if (d.selRing)  d.selRing.scale.set(base * 1.5, base * 1.5, 1);
+      if (d.firedRing) d.firedRing.scale.set(base * 1.9, base * 1.9, 1);
+      if (d.halo)     d.halo.scale.set(base * 2.0, base * 2.0, 1);
+      if (d.statusSprite) d.statusSprite.scale.set(base * 1.4, base * 0.42, 1);
+      // visibility
+      d.marker.visible = markersOn;
+      if (d.label) d.label.visible = markersOn;
+      if (d.statusSprite) d.statusSprite.visible = markersOn;
+      if (!markersOn) { if (d.selMat) d.selMat.opacity = 0; if (d.firedMat) d.firedMat.opacity = 0; }
+      else if (d.selMat && g === selected) d.selMat.opacity = 1;
+    });
   }
 
   // Soft radial halo for the selected-unit pulse.
@@ -2519,7 +2602,10 @@
   }
 
   function selectUnit(g) {
+    // I3: move the yellow/black selection ring to the newly-selected unit
+    units.forEach(function (u) { if (u.userData.selMat) u.userData.selMat.opacity = 0; });
     selected = g; var d = g.userData;
+    if (d.selMat) d.selMat.opacity = markersOn ? 1 : 0;
     var p = document.getElementById("unit"); p.style.display = "block";
     document.getElementById("uName").textContent = d.name;
     document.getElementById("uClass").textContent = d.cls;
@@ -2586,6 +2672,19 @@
     document.getElementById("tSub").classList.toggle("on", show.suburbs);
     document.getElementById("tFogCull").classList.toggle("on", show.fogcull);
     document.getElementById("tFly").onclick = function () { setFly(!fly.on); };
+
+    // ---- MARKERS view button: cycle FULL -> SMALL -> OFF (I1) ----
+    var mkBtn = document.getElementById("tMarkers");
+    if (mkBtn) {
+      mkBtn.onclick = function () {
+        // cycle state
+        if (markersOn && markerScale > 0.75) { markerScale = 0.6; markersOn = true; mkBtn.textContent = "MARKERS: SMALL"; }
+        else if (markersOn) { markersOn = false; mkBtn.textContent = "MARKERS: OFF"; }
+        else { markersOn = true; markerScale = 1.0; mkBtn.textContent = "MARKERS: FULL"; }
+        mkBtn.classList.toggle("on", markersOn);
+        applyMarkerScale();
+      };
+    }
 
     // ---- COMBAT LOG: open/close the full scrollable history panel ----
     var clogHdr = document.getElementById("clogHdr"), clogFull = document.getElementById("clogFull"),
@@ -3028,9 +3127,10 @@
     cmd.flagship = null; cmd.selectedSet = []; cmd.objective = null;
     units.forEach(function (g) {
       var d = g.userData;
+      var ammoMax = d.cls === "Siege" ? 40 : d.cls === "Convoy" ? 200 : 80;   // E4: finite rounds
       d.cmd = { flags: [], targetIdx: 0, struct: d.struct != null ? d.struct : 100,
                 ko: false, speed: classSpeed(d.cls), firingTo: null, fireLine: null,
-                fireTimer: 0, aiTarget: null };
+                fireTimer: 0, aiTarget: null, ammo: ammoMax, ammoMax: ammoMax, onFire: false };
     });
     syncCommandPanel();
   }
@@ -3457,12 +3557,14 @@
     if (target && !holdFire) {
       var firstShot = (c.firingTo !== target);
       c.firingTo = target;
+      target.userData._firedOn = true;            // I4: mark target as being fired on this frame
       // hit model: damage rate scales with closeness within range
       var rangeFrac = bestD / d.rangeM;            // 0=point blank, 1=max range
       var dps = (3.0 + 7.0 * (1 - rangeFrac));     // 3..10 struct/sec (slow, satisfying)
       var td = target.userData.cmd;
       var before = td.struct;
       td.struct -= dps * dt;
+      if (c.ammo != null) c.ammo = Math.max(0, c.ammo - dps * dt * 0.4);   // consume ammunition
       // FIRE cadence: a discrete "shot" muzzle flash + boom + impact + log roughly every ~0.7s
       c.fireTimer = (c.fireTimer || 0) + dt;
       if (firstShot || c.fireTimer >= 0.7) {
@@ -3678,6 +3780,8 @@
     d.x = x; d.z = z; g.position.set(x, ny, z);
     d.eye = ny + d._eyeOff;
     d.cmd.struct = 100; d.cmd.ko = false; d.cmd.speed = classSpeed(cls); d.cmd.aiTarget = null;
+    d.cmd.ammoMax = cls === "Siege" ? 40 : cls === "Convoy" ? 200 : 80; d.cmd.ammo = d.cmd.ammoMax;
+    d.cmd.onFire = false; d._statusKey = "";
     // recolour body to the (possibly new) side
     var col = side === "friend" ? COL.friend : side === "hostile" ? COL.hostile : COL.civ;
     var mk = side === "friend" ? COL.mkFriend : side === "hostile" ? COL.mkHostile : COL.mkCiv;
@@ -3873,6 +3977,19 @@
     // decay the mini combat log over real time (re-render ~4x/sec even with no new lines)
     _clogDecayT = (_clogDecayT || 0) + dt;
     if (cmd.on && _clogDecayT > 0.25) { _clogDecayT = 0; renderClog(); }
+
+    // I4/I5: per-frame marker upkeep — fired-on red ring + ammo/status strip.
+    if (cmd.on) {
+      for (var mi = 0; mi < units.length; mi++) {
+        var mu = units[mi], md = mu.userData;
+        if (md.firedMat) {
+          var want = (cmd.playing && md._firedOn && markersOn) ? (0.6 + 0.4 * (0.5 + 0.5 * Math.sin(performance.now() * 0.012))) : 0;
+          md.firedMat.opacity = want;
+        }
+        md._firedOn = false;                 // cleared; re-set by stepEngage if still targeted
+        updateStatusSprite(mu);
+      }
+    }
 
     // HUD compass rose: follow the live camera heading vs TRUE north
     updateCompassHud();
