@@ -137,8 +137,9 @@
   #clogBody .ln.hit,#clogFullBody .ln.hit{color:var(--amber)}
   #clogBody .ln.friend,#clogFullBody .ln.friend{color:#7fb6d6}
   /* full scrollable combat log */
-  #clogFull{position:fixed;left:290px;bottom:140px;width:360px;max-height:44vh;z-index:8;overflow:hidden}
-  #clogFullBody{font-size:10.5px;line-height:1.7;letter-spacing:.02em;max-height:calc(44vh - 34px);overflow-y:auto}
+  #clogFull{position:fixed;left:290px;bottom:140px;width:380px;max-height:56vh;z-index:8;
+    display:none;flex-direction:column;overflow:hidden}
+  #clogFullBody{font-size:10.5px;line-height:1.7;letter-spacing:.02em;overflow-y:auto;flex:1 1 auto}
   /* L1: COMBAT POV inset — a border frame over the GL scissor viewport (bottom-right) */
   #povView{position:fixed;right:14px;bottom:150px;z-index:6;pointer-events:none;
     border:1px solid var(--amber);box-shadow:0 0 14px rgba(176,130,44,.25);
@@ -171,6 +172,13 @@
   #events .ev .a{color:var(--teal)} #events .ev .h{color:var(--red)}
   @keyframes evfade{0%{opacity:0;transform:translateY(-6px)}10%{opacity:1;transform:translateY(0)}
     75%{opacity:1}100%{opacity:0;transform:translateY(-4px)}}
+  /* AC2: nicer custom scrollbars (webkit + firefox) */
+  *{scrollbar-width:thin;scrollbar-color:#3a4a42 transparent}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-track{background:rgba(20,26,22,.4)}
+  ::-webkit-scrollbar-thumb{background:#3a4a42;border-radius:4px;border:1px solid rgba(90,110,100,.3)}
+  ::-webkit-scrollbar-thumb:hover{background:#5a7062}
+  ::-webkit-scrollbar-corner{background:transparent}
   /* R6: title dropdown menu */
   #titleMenu{position:fixed;top:34px;left:14px;z-index:50;background:rgba(13,17,16,.97);
     border:1px solid var(--hair);min-width:180px;box-shadow:0 4px 18px rgba(0,0,0,.5)}
@@ -319,6 +327,7 @@
     <button class="btn" id="tSub" title="Cycle: OFF / borders / borders+territory / all / all+names">SUBURBS: BORDERS</button>
     <button class="btn" id="tFogCull">FOG CULL</button>
     <button class="btn on" id="tMarkers" title="Unit markers: FULL / SMALL / OFF">MARKERS: FULL</button>
+    <button class="btn on" id="tNames" title="Show/hide unit name labels">UNIT NAMES</button>
     <button class="btn" id="tThreat" title="Threat band vs an expected enemy gun (red = can kill you)">THREAT BAND</button>
     <select id="threatSel2" style="margin-top:3px;font-size:10px"></select>
   </div>

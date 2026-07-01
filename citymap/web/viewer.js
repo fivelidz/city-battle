@@ -94,6 +94,7 @@
   var units = [], selected = null;
   // I1/R3: unit-marker size + on/off. SMALL by default (cycle SMALL -> FULL -> OFF via MARKERS btn).
   var markerScale = 0.6, markersOn = true;
+  var namesOn = true;   // AC5: unit name labels on/off
   // G2: threat gun for the immunity-band calc (name + max reach). "AUTO" uses the enemy on-map.
   var THREAT_GUNS = [
     { name: "AUTO (on-map enemy)", rangeM: 0 },
@@ -122,7 +123,7 @@
   var soundOn = (QS.get("sound") === "1");
 
   // SIM SPEED multiplier (1x/2x/3x/4x) — scales movement + combat update rate. Default 1x slow.
-  var simSpeed = clamp(parseFloat(QS.get("speed")) || 1, 1, 4);
+  var simSpeed = clamp(parseFloat(QS.get("speed")) || 1, 0.25, 8);
 
   // ?topo=1 shows the bare topographic terrain (no LOS/viewshed shading) — a clean map review.
   if (QS.get("topo") === "1") { show.los = false; }
@@ -236,25 +237,25 @@
     // cap on-screen popups
     while (host.children.length > 5) host.removeChild(host.firstChild);
   }
-  // Render both the MINI panel (recent, decaying) and the FULL scrollable panel (if open).
+  // Render the MINI panel (last N lines by COUNT — Z1, no time fade) + the FULL scrollable panel.
   function renderClog() {
-    var now = (performance.now ? performance.now() : Date.now()) / 1000;
     var mini = document.getElementById("clogBody");
     if (mini) {
-      // newest first; only the last CLOG_MINI_SHOW lines, and drop lines older than the decay window
-      var out = "", shown = 0;
+      // newest first; just the last CLOG_MINI_SHOW lines. A gentle top-down fade for readability
+      // (position-based, NOT time-based) so old lines don't pile up and squash.
+      var out = "", shown = 0, n = Math.min(CLOG_MINI_SHOW, clogLines.length);
       for (var i = clogLines.length - 1; i >= 0 && shown < CLOG_MINI_SHOW; i--) {
-        var age = now - (clogLines[i].t || now);
-        if (age > CLOG_DECAY_S) break;                       // older ones have decayed away
-        var fade = age > CLOG_DECAY_S * 0.5 ? (1 - (age - CLOG_DECAY_S * 0.5) / (CLOG_DECAY_S * 0.5)) : 1;
-        out += '<div class="ln ' + clogLines[i].kind + '" style="opacity:' + fade.toFixed(2) + '">' +
+        var op = 1 - (shown / Math.max(1, n)) * 0.55;        // newest bright, oldest ~0.45
+        out += '<div class="ln ' + clogLines[i].kind + '" style="opacity:' + op.toFixed(2) + '">' +
                clogLines[i].html + "</div>";
         shown++;
       }
       mini.innerHTML = out || '<div class="ln" style="opacity:.4">\u2014</div>';
     }
+    // Z2: FULL scrollable log (only re-render when open, and keep scroll pinned to newest at top).
+    var fullPanel = document.getElementById("clogFull");
     var full = document.getElementById("clogFullBody");
-    if (full && document.getElementById("clogFull") && document.getElementById("clogFull").style.display !== "none") {
+    if (full && fullPanel && fullPanel.style.display !== "none") {
       var fout = "";
       for (var j = clogFull.length - 1; j >= 0; j--)
         fout += '<div class="ln ' + clogFull[j].kind + '">' + clogFull[j].html + "</div>";
@@ -510,7 +511,8 @@
     // ----- COMMAND MODE: command groups + (optional) forced scenario / autoplay -----
     initCommand();
     if (cmd.forceScenario) { setCommandMode(true); loadScenario(cmd.forceScenario); }
-    if (cmd.forcePlay) { setCommandMode(true); setPlaying(true); autoIssueDemoOrders(); }
+    else if (cmd.forcePlay) { setCommandMode(true); setPlaying(true); autoIssueDemoOrders(); }
+    else if (QS.get("cmd") !== "0") { setCommandMode(true); }   // AD2: command mode ON by default
 
     // ----- camera framing -----
     frameCamera();
@@ -1850,13 +1852,15 @@
       var g3 = new THREE.BufferGeometry().setFromPoints(pts);
       var ln = new THREE.Line(g3, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: op, depthTest: false })); ln.renderOrder = 12; grp.add(ln);
     }
-    // inner THREAT (0..innerEdge) + outer THREAT (outerEdge..er) in red; immune ring stays clear.
-    disc(0, innerEdge, 0xd83a30, 0.22);
-    disc(outerEdge, er, 0xd83a30, 0.18);
-    edge(innerEdge, 0xff6a5a, 0.95);
-    edge(outerEdge, 0xff6a5a, 0.95);
-    edge(er, 0xd83a30, 0.5);
-    var lbl = makeTagSprite("THREAT vs " + (immunityThreat.name || "ENEMY GUN") + "  (red = can kill you)", 0xff6a5a, span);
+    // AC4: ONE clean red THREAT disc out to the enemy gun's full reach (= "inside this = you can be
+    // killed"), with a single subtle dashed ring marking the IMMUNE stand-off band inside it. No
+    // more double-disc bullseye.
+    disc(0, er, 0xd83a30, 0.14);        // whole threatened area, faint red
+    edge(er, 0xff6a5a, 0.9);            // bold outer threat edge
+    // immune stand-off: a thin clear band drawn as two subtle cyan hint rings (safe distance)
+    edge(innerEdge, 0x5fd6e6, 0.45);
+    edge(outerEdge, 0x5fd6e6, 0.45);
+    var lbl = makeTagSprite("THREAT vs " + (immunityThreat.name || "ENEMY GUN"), 0xff6a5a, span);
     lbl.position.set(d.x, gy + Math.max(140, er * 0.05), d.z + er * 0.55);
     lbl.material.depthTest = false; lbl.renderOrder = 25; grp.add(lbl);
   }
@@ -2310,7 +2314,7 @@
       if (d.statusSprite) d.statusSprite.scale.set(base * 1.4, base * 0.42, 1);
       // visibility
       d.marker.visible = markersOn;
-      if (d.label) d.label.visible = markersOn;
+      if (d.label) d.label.visible = markersOn && namesOn;
       if (d.statusSprite) d.statusSprite.visible = markersOn;
       if (!markersOn) { if (d.selMat) d.selMat.opacity = 0; if (d.firedMat) d.firedMat.opacity = 0; }
       else if (d.selMat && g === selected) d.selMat.opacity = 1;
@@ -3195,6 +3199,16 @@
       apTog.textContent = hid ? "[ show ]" : "[ hide ]";
     };
 
+    // ---- AC5: HIDE / SHOW unit name labels ----
+    var namesBtn = document.getElementById("tNames");
+    if (namesBtn) {
+      namesBtn.onclick = function () {
+        namesOn = !namesOn;
+        namesBtn.classList.toggle("on", namesOn);
+        units.forEach(function (g) { if (g.userData.label) g.userData.label.visible = namesOn && markersOn; });
+      };
+    }
+
     // ---- V2: THREAT BAND independent toggle + its own threat-gun dropdown ----
     var thBtn = document.getElementById("tThreat");
     if (thBtn) {
@@ -3263,15 +3277,24 @@
     }
 
     // ---- COMBAT LOG: open/close the full scrollable history panel ----
-    var clogHdr = document.getElementById("clogHdr"), clogFull = document.getElementById("clogFull"),
+    // Z3: only the small [ LOG ] link opens the full log (NOT the whole header — so clicking or
+    // dragging the panel header no longer accidentally opens/closes it). The full log has an
+    // explicit [ close ] link.
+    var clogExpand = document.getElementById("clogExpand"), clogFull = document.getElementById("clogFull"),
         clogFullHdr = document.getElementById("clogFullHdr");
-    if (clogHdr && clogFull) {
-      clogHdr.onclick = function () {
-        clogFull.style.display = clogFull.style.display === "none" ? "block" : "none";
+    if (clogExpand && clogFull) {
+      clogExpand.style.cursor = "pointer";
+      clogExpand.onclick = function (e) {
+        e.stopPropagation();
+        clogFull.style.display = clogFull.style.display === "none" ? "flex" : "none";
         renderClog();
       };
     }
-    if (clogFullHdr && clogFull) clogFullHdr.onclick = function () { clogFull.style.display = "none"; };
+    // the full-log close is a small [ close ] span, not the whole header
+    if (clogFullHdr && clogFull) {
+      var cc = clogFullHdr.querySelector(".tw");
+      if (cc) { cc.style.cursor = "pointer"; cc.onclick = function (e) { e.stopPropagation(); clogFull.style.display = "none"; }; }
+    }
 
     // ---- CONDITIONS panel HIDE/SHOW (collapse its body) ----
     var wxHdr = document.getElementById("wxHdr"), wxPanel = document.getElementById("wx"),
@@ -3669,7 +3692,7 @@
       // speed scales with map size: controllable cruise (~cross 11km in ~20s at base),
       // ~7s on shift-boost. Tuned down from earlier so the fly cam is easy to drive (item A).
       var span = map ? Math.max(map.size_m[0], map.size_m[1]) : 11000;
-      fly.speed = span * 0.052;    // units/sec
+      fly.speed = span * 0.104;    // units/sec — AD1: ~2x faster default fly speed
       fly.clock.getDelta();        // reset dt so first frame isn't a huge jump
     } else {
       controls.enabled = true;
@@ -4057,9 +4080,10 @@
   }
 
   var ARRIVE_M = 50;
+  var SIM_BASE = 0.6;   // AD3: base game rate is SLOWER (more tactical); SPEED buttons scale on top
   function stepCommandSim(dt) {
     if (!cmd.on || !cmd.playing) return;
-    dt = Math.min(dt, 0.1) * simSpeed;   // SPEED control scales movement + combat rate (item G13)
+    dt = Math.min(dt, 0.1) * simSpeed * SIM_BASE;   // slower base pace; 1x already reads deliberate
     var moved = false;
     enemyAI(dt);   // hostiles think + set their own move targets (maneuvering opponent)
     units.forEach(function (g) {

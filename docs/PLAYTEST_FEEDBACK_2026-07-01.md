@@ -330,3 +330,13 @@ B1 real suburb borders.
   (curved/tangent, not big flat tags).
 - **[ ] AC4 — THREAT band looks weird / DOUBLED** — fix the double-draw.
 - **[ ] AC5 — Add a HIDE NAMES option** (toggle unit name labels off).
+
+## AD. Clarifications (round 4b)
+
+- **[ ] AD1 — "Default move speed +100%" meant the CAMERA FLY SPEED, not the sim speed.** Double
+  the default fly-cam movement speed. (Revert the sim-base-rate change from AA1.)
+- **[ ] AD2 — COMMAND MODE should start ON by default** (boot straight into command mode).
+
+- **[ ] AD3 — Base GAME speed should be SLOWER by default** (more tactical / time to think). Add a
+  slow preset and make the default start slower. (Only the CAMERA fly speed was meant to be faster —
+  AD1 — the sim itself should be slow.)
