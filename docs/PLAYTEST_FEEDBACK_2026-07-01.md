@@ -10,12 +10,24 @@
 
 ## A. Map orientation & geography
 
-- **[ ] A1 — MAP IS FLIPPED (east/west mirrored).** East is drawn to the LEFT of north instead of
-  to the right. The compass/world frame is mirrored. Needs the X (east) axis corrected so
-  N-up has E on the right, W on the left. **HIGH PRIORITY — geography must be true.**
-  - Note: world frame comment in viewer.js claims `+X = EAST … -X = WEST`, `+Z = NORTH`. If the
-    terrain mesh or camera is built mirrored, the on-screen result flips. Verify against a known
-    Sydney landmark (harbour opens to the east).
+- **[~] A1 — MAP reads east-on-the-LEFT (needs coordinate-convention fix).** ROOT CAUSE FOUND
+  (deep investigation): the data is geographically correct — bbox `[W 151.18, S -33.9, E 151.3,
+  N -33.79]`, and `x_m=(lon-west)*mPerLon` so **+X really is EAST**, `+Z` really is NORTH. The
+  problem is a **handedness/display-convention** issue: in a right-handed `+X=east / +Z=north /
+  +Y=up` frame, ANY north-up view (even a true top-down with up=+Z) renders **east on the
+  screen-LEFT** — it's mathematically unavoidable in that frame. So it's NOT a camera bug and NOT
+  a data mirror; the map frame is effectively left-handed for screen display.
+  - **Correct fix (deliberate, do as its own change):** make the display east-on-right by
+    mirroring the EAST axis consistently at every world-placement boundary — flip terrain heightmap
+    columns in the mesh + topo texture + `heightAt` (all read `H[z*res+x]` → read `H[z*res+(res-1-x)]`
+    OR equivalently `worldX = W - x`), flip building / road / suburb / unit-spawn X the same way,
+    and negate the east component in `bearingFromVec` (`atan2(-dx, dz)`) + swap the E/W compass
+    edge labels. Because units/suburbs/roads/buildings all derive from the same lon→X mapping, they
+    must ALL flip together or they desync — hence do it in one careful pass, not piecemeal.
+  - NOT shipped in round 1 (too invasive to rush into the shared live demo). The camera default is
+    now north-up (N at top); the E/W screen-side correction is the remaining, deliberate step.
+  - Ground-truth check for the fix: Sydney's ocean/harbour mouth is to the EAST (higher lon) — it
+    should end up on the screen-RIGHT when north is up.
 
 ## B. Suburbs
 

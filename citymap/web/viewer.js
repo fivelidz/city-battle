@@ -2540,7 +2540,6 @@
     var span = Math.max(W, L);
     camera.near = span * 0.001; camera.far = span * 6; camera.updateProjectionMatrix();
     controls.target.set(W / 2, 0, L / 2);
-    // steeper tactical overhead so topography + viewshed read clearly
     camera.position.set(W / 2, span * 1.14, L / 2 + span * 0.74);
     controls.update();
   }
@@ -2932,9 +2931,10 @@
   function updateFly(dt) {
     if (!fly.on) return;
     var fwd = flyForward();
-    // strafe = forward x up (right-hand), kept horizontal
+    // strafe RIGHT = up x forward (Three.js right-handed): cross(fwd,up) would give LEFT, so
+    // D would strafe the wrong way. up x fwd gives the true camera-right vector.
     var up = new THREE.Vector3(0, 1, 0);
-    var right = new THREE.Vector3().crossVectors(fwd, up).normalize();
+    var right = new THREE.Vector3().crossVectors(up, fwd).normalize();
     var move = new THREE.Vector3();
     var k = fly.keys;
     if (k.w) move.add(fwd);
