@@ -43,7 +43,9 @@ namespace CityBattle.Combat
         [Header("City terrain (optional)")]
         public bool UseRealCityBuildings = false;
         public string BuildingsJson = "Terrain/san_francisco_buildings.json";
-        public float MinBuildingFootprintM = 200f;  // only render larger buildings as cover
+        public float MinBuildingFootprintM = 200f;  // only render larger buildings as cover (OSM path)
+        [Tooltip("Citymap buildings under this span (m) are culled. Small so the full skyline shows.")]
+        public float CityMapMinFootprintM = 6f;
 
         public void BuildBattle()
         {
@@ -52,8 +54,20 @@ namespace CityBattle.Combat
             Sim.OnProjectileSpawned += SpawnProjectileView;
             Sim.OnImpact += OnImpact;
 
-            // Optionally drape real OSM city buildings on the terrain as cover/occluders.
-            if (UseRealCityBuildings)
+            // Drape real city buildings on the terrain as cover/occluders.
+            // If the terrain came from a citymap JSON, use its embedded buildings (poly+base_m);
+            // otherwise fall back to the standalone OSM buildings JSON.
+            if (TerrainBuilder.CityMap != null && TerrainBuilder.CityMap.Buildings.Count > 0)
+            {
+                var bGo = new GameObject("CityBuildings");
+                bGo.transform.SetParent(TerrainBuilder.transform, false);
+                var cb = bGo.AddComponent<CityBattle.Terrain.CityBuildings>();
+                // Citymap buildings ARE the city skyline (not just big cover blocks) -> keep almost
+                // all of them so Sydney reads as a real dense city. A tiny cull drops slivers only.
+                cb.MinFootprintM = CityMapMinFootprintM;
+                cb.BuildFromCityMap(TerrainBuilder.CityMap.Buildings, Terrain);
+            }
+            else if (UseRealCityBuildings)
             {
                 var bGo = new GameObject("CityBuildings");
                 bGo.transform.SetParent(TerrainBuilder.transform, false);

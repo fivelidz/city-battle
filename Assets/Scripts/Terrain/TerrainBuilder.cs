@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace CityBattle.Terrain
 {
-    public enum TerrainSource { Procedural, RealDem }
+    public enum TerrainSource { Procedural, RealDem, CityMapJson }
 
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
     public class TerrainBuilder : MonoBehaviour
@@ -19,6 +19,12 @@ namespace CityBattle.Terrain
         public int DemResolution = 513;
         public float DemMaxHeightM = 277f;     // size_height_m from {city}_meta.json
         public float DemCellSize = 11.15f;     // size_width_m / (resolution-1)
+
+        [Header("CityMap JSON (canonical citymap pipeline output)")]
+        [Tooltip("StreamingAssets-relative path, e.g. CityMaps/sydney_harbour.citymap.json")]
+        public string CityMapPath = "CityMaps/sydney_harbour.citymap.json";
+        [Tooltip("Populated after Build() when Source == CityMapJson; buildings/water/weather live here.")]
+        public CityMapData CityMap { get; private set; }
 
         [Header("Generation (procedural)")]
         public int Resolution = 192;        // samples per side
@@ -36,7 +42,16 @@ namespace CityBattle.Terrain
         {
             float[,] hm;
             float cell;
-            if (Source == TerrainSource.RealDem && TryLoadDem(out hm, out cell))
+            float waterLevel = float.NegativeInfinity;
+            CityMap = null;
+
+            if (Source == TerrainSource.CityMapJson && TryLoadCityMap(out hm, out cell, out waterLevel))
+            {
+                Resolution = hm.GetLength(0);
+                MaxHeight = Mathf.Max(1f, CityMap.MaxM);
+                CellSize = cell;
+            }
+            else if (Source == TerrainSource.RealDem && TryLoadDem(out hm, out cell))
             {
                 Resolution = hm.GetLength(0);
                 MaxHeight = DemMaxHeightM;
@@ -48,12 +63,29 @@ namespace CityBattle.Terrain
                 cell = CellSize;
             }
             Field = new TerrainField(hm, cell, transform.position);
+            if (!float.IsNegativeInfinity(waterLevel))
+                Field.WaterLevelM = transform.position.y + waterLevel;
             BuildMesh(hm);
             var mr0 = GetComponent<MeshRenderer>();
             Debug.Log($"[TerrainBuilder] built {Resolution}x{Resolution} src={Source} maxH={MaxHeight} " +
                       $"mat={(mr0.sharedMaterial!=null?mr0.sharedMaterial.shader.name:"NULL")} " +
                       $"sampleColor={(GetComponent<MeshFilter>().sharedMesh.colors.Length>0?GetComponent<MeshFilter>().sharedMesh.colors[Resolution*Resolution/2].ToString():"none")}");
             return Field;
+        }
+
+        bool TryLoadCityMap(out float[,] hm, out float cell, out float waterLevel)
+        {
+            hm = null; cell = CellSize; waterLevel = float.NegativeInfinity;
+            CityMap = CityMapLoader.LoadFromStreamingAssets(CityMapPath);
+            if (CityMap == null || CityMap.Heights == null)
+            {
+                Debug.LogWarning($"[TerrainBuilder] citymap load failed for '{CityMapPath}'; using procedural.");
+                return false;
+            }
+            hm = CityMap.Heights;
+            cell = CityMap.CellM;
+            waterLevel = CityMap.WaterLevelM;
+            return true;
         }
 
         bool TryLoadDem(out float[,] hm, out float cell)

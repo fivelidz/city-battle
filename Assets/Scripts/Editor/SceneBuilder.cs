@@ -34,8 +34,13 @@ namespace CityBattle.EditorTools
             var clock = clockGo.AddComponent<SimClock>();
 
             // ---- Terrain ----
+            // Sydney (harbour + CBD assault) via the canonical citymap JSON: real topography +
+            // real buildings + harbour water. Falls back to procedural if the JSON is missing.
             var terrainGo = new GameObject("Terrain", typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider));
             var tb = terrainGo.AddComponent<TerrainBuilder>();
+            tb.Source = TerrainSource.CityMapJson;
+            tb.CityMapPath = "CityMaps/sydney_harbour.citymap.json";
+            // (procedural fallback values, used only if the citymap fails to load)
             tb.Resolution = 192; tb.CellSize = 12f; tb.MaxHeight = 150f; tb.Seed = 1337;
             tb.TerrainMaterial = terrainMat;
 
@@ -53,12 +58,13 @@ namespace CityBattle.EditorTools
             cam.backgroundColor = new Color(0.03f, 0.04f, 0.05f);
             cam.clearFlags = CameraClearFlags.SolidColor;
             var camRig = camGo.AddComponent<BattleCamera>();
-            // Frame the player force (south) looking toward the enemy (north), steep top-down RTS view.
-            camRig.Target = new Vector3(950, 0, 600);
-            camRig.Distance = 900f;
-            camRig.Pitch = 58f;
+            // Frame the player force (south) looking toward the enemy (north) across Sydney harbour.
+            // Pulled back + higher so the real topography, buildings and water all read at a glance.
+            camRig.Target = new Vector3(1000, 0, 1100);
+            camRig.Distance = 2200f;
+            camRig.Pitch = 52f;
             camRig.MinDistance = 40f;
-            camRig.MaxDistance = 5000f;
+            camRig.MaxDistance = 8000f;
 
             // ---- Light (sun) ----
             var sunGo = new GameObject("Sun", typeof(Light));

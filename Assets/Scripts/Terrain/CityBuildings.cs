@@ -84,6 +84,102 @@ namespace CityBattle.Terrain
             BuildFromJson(BuildingsJsonPath, terrain);
         }
 
+        /// <summary>
+        /// Build extruded meshes from already-parsed citymap buildings (poly + height + base_m).
+        /// Uses each building's own base_m (terrain height under the footprint) instead of
+        /// re-sampling the terrain, so towers sit exactly where the pipeline placed them.
+        /// </summary>
+        public void BuildFromCityMap(System.Collections.Generic.List<CityMapBuilding> recs, TerrainField terrain)
+        {
+            if (recs == null || recs.Count == 0)
+            {
+                Debug.LogWarning("[CityBuildings] no citymap buildings to build.");
+                return;
+            }
+            ClearChildren();
+            BuildingCount = 0;
+            ChunkCount = 0;
+
+            var verts = new List<Vector3>(MaxVertsPerChunk);
+            var tris = new List<int>(MaxVertsPerChunk * 3);
+
+            for (int r = 0; r < recs.Count; r++)
+            {
+                var rec = recs[r];
+                if (rec.Poly == null || rec.Poly.Length < 3) continue;
+                if (MinFootprintM > 0f && FootprintSpanV(rec.Poly) < MinFootprintM) continue;
+
+                float height = rec.HeightM > 0f ? rec.HeightM : DefaultHeightM;
+                int needed = rec.Poly.Length * 2;
+                if (verts.Count + needed > MaxVertsPerChunk && verts.Count > 0)
+                    FlushChunk(verts, tris);
+
+                AppendBuildingV(rec.Poly, height, rec.BaseM, terrain, verts, tris);
+                BuildingCount++;
+            }
+            if (verts.Count > 0) FlushChunk(verts, tris);
+
+            Debug.Log("[CityBuildings] built " + BuildingCount + " citymap buildings in " +
+                      ChunkCount + " mesh chunk(s).");
+        }
+
+        // Vector2-poly variant of AppendBuilding using an explicit base height (world Y = origin.y + base_m).
+        void AppendBuildingV(Vector2[] poly, float height, float baseM, TerrainField terrain,
+                             List<Vector3> verts, List<int> tris)
+        {
+            int m = poly.Length;
+
+            // Base in WORLD Y: terrain origin + base_m (base_m is metres-ASL under the centroid).
+            float originY = terrain != null ? terrain.Origin.y : transform.position.y;
+            float baseY = originY + baseM - FoundationSinkM;
+            float topY = baseY + height;
+
+            // Ensure CCW winding so the top cap faces up.
+            if (SignedAreaV(poly) < 0f) System.Array.Reverse(poly);
+
+            int start = verts.Count;
+            for (int i = 0; i < m; i++) verts.Add(new Vector3(poly[i].x, baseY, poly[i].y));
+            for (int i = 0; i < m; i++) verts.Add(new Vector3(poly[i].x, topY, poly[i].y));
+
+            int bot = start, top = start + m;
+            for (int i = 0; i < m; i++)
+            {
+                int j = (i + 1) % m;
+                int b0 = bot + i, b1 = bot + j;
+                int t0 = top + i, t1 = top + j;
+                tris.Add(b0); tris.Add(b1); tris.Add(t1);
+                tris.Add(b0); tris.Add(t1); tris.Add(t0);
+            }
+            for (int i = 1; i < m - 1; i++)
+            {
+                tris.Add(top); tris.Add(top + i); tris.Add(top + i + 1);
+            }
+        }
+
+        static float SignedAreaV(Vector2[] poly)
+        {
+            float a = 0f; int n = poly.Length;
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 p0 = poly[i], p1 = poly[(i + 1) % n];
+                a += p0.x * p1.y - p1.x * p0.y;
+            }
+            return a * 0.5f;
+        }
+
+        static float FootprintSpanV(Vector2[] poly)
+        {
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minZ = float.MaxValue, maxZ = float.MinValue;
+            for (int i = 0; i < poly.Length; i++)
+            {
+                float x = poly[i].x, z = poly[i].y;
+                if (x < minX) minX = x; if (x > maxX) maxX = x;
+                if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+            }
+            return Mathf.Max(maxX - minX, maxZ - minZ);
+        }
+
         void BuildMeshes(List<BuildingRec> recs, TerrainField terrain)
         {
             BuildingCount = 0;
