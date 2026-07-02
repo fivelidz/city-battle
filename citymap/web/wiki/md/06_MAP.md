@@ -1,7 +1,7 @@
 # The Map & Terrain
 
-Terrain is the new ocean. Where Rule the Waves fought on flat sea, CITY BATTLE fights on the **real
-3D topography of real cities** — and that topography blocks line of sight and shell paths, creating
+Terrain is the new ocean. Where naval battles were fought on flat sea, CITY BATTLE fights on the
+**real 3D topography of real cities** — and that topography blocks line of sight and shell paths, creating
 defilade, dead space and immunity zones (01_FIRE_AND_BALLISTICS). The map is gameplay, not scenery.
 
 ## Real DEM terrain

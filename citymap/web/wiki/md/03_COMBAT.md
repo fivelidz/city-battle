@@ -80,6 +80,6 @@ automatic loss — protect or extract them (a dedicated **crew rescue** mission 
 - **Precipitation slows movement** — rain/snow bog down the leg-walkers (a directive-level rule).
 - **Fog / rain / haze / night cut spotting** — shorten LOS & sensor range, compress fights to
   **short range**, which raises the **side-armour (flat-fire) threat** and blunts long-range
-  gunnery. Radar/LIDAR and recon drones partially restore vision (see `ref/RTW2_MECHANICS.md` §8).
+  gunnery. Radar/LIDAR and recon drones partially restore vision.
 - Weather varies per battle, so the same lance performs differently day to day — good fire control,
   sensors and drones hedge against bad visibility.

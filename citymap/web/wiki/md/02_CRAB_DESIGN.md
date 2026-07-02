@@ -5,13 +5,12 @@ chassis gives you a mass budget, weapon mounts and utility slots; you spend them
 (per zone)**, **guns (and where they sit)**, and **modules**. Balance decides the crab's auto-class
 and its **immunity zone**. (Schema: `MECHA_SCHEMA.md`. Data: `Assets/Resources/CSV/`.)
 
-## Chassis classes → Rule the Waves codes
-Each chassis "look" maps to an RtW ship-class code. As in RtW, the **class label is partly
-derived** from your finished numbers (tonnage, gun bore, armour, speed) — up-gun & up-armour a Line
-and it reads as a heavy cruiser; strip the belt off a Siege and keep the guns and it reads as a
-battlecruiser.
+## Chassis classes → warship class codes
+Each chassis "look" maps to a naval ship-class code. The **class label is partly derived** from your
+finished numbers (tonnage, gun bore, armour, speed) — up-gun & up-armour a Line and it reads as a
+heavy cruiser; strip the belt off a Siege and keep the guns and it reads as a battlecruiser.
 
-| Chassis | Class | RtW code | Mass (t) | Legs | Speed | Mounts | Util | Max bore | Year | Role |
+| Chassis | Class | Class code | Mass (t) | Legs | Speed | Mounts | Util | Max bore | Year | Role |
 |---|---|---|---|---|---|---|---|---|---|---|
 | **Whippet** | Recon | scout strider (DD-ish) | 28 | 6 | 72 | 1 | 3 | 57mm | 2027 | scout/spotter/EW carrier |
 | **Jackal** | Skirmisher | **DD** destroyer-crab | 55 | 6 | 60 | 2 | 2 | 90mm | 2025 | fast harasser, anti-light/anti-drone |
@@ -21,7 +20,7 @@ battlecruiser.
 | **Leviathan** | Siege | **BB/BC** battle-crab | 360 | 8 | 22 | 6 | 3 | 305mm | 2025 | dreadnought-crab: biggest guns, thickest belt, slow |
 | **Carrier-Crab Nimbus** | Carrier | **CV** drone carrier | 240 | 10 | 34 | 3 | 6 | 127mm | 2056 | drone mothership, many utility slots |
 
-**What the codes mean** (from RtW, see `ref/RTW2_MECHANICS.md`): **DD** destroyer = small, fast,
+**What the codes mean** (standard warship classes): **DD** destroyer = small, fast,
 lightly armoured; **CL** light cruiser = medium; **CA** heavy cruiser = bigger guns & armour; **BC**
 battlecruiser = battleship guns on a *fast, lighter-armoured* hull (speed bought with armour);
 **BB** battleship = heaviest guns + thickest belt, slow; **CV** carrier = hull given to drones, light
@@ -31,7 +30,7 @@ guns. **Recon < DD < CL < CA < BC/BB** in tonnage and bore.
 Armour is set as **thickness (mm) per zone**, not one number. Mass cost = zone area × thickness ×
 material density; effective protection = `thickness × material quality × nation armour quality`.
 
-| Zone | RtW analogue | Threatened by |
+| Zone | Warship analogue | Threatened by |
 |---|---|---|
 | **Bow / glacis** | front belt | direct (flat) fire from ahead |
 | **Port / starboard flank** | side belt | flanking fire, broadside exposure |
@@ -132,5 +131,5 @@ and **cliffs (≈50°+) are impassable** — you must route around them (see the
   **unlocked by research** (see 04_RESEARCH). Because research is **stochastic**, the year a
   component actually becomes buildable **varies per playthrough** — you might field railguns early
   or be stuck on conventional guns for years.
-- A finished design can be given a **custom class name** (as in RtW) — name your battle-crab line
-  and it carries through the roster, production and battle UI.
+- A finished design can be given a **custom class name** — name your battle-crab line
+   and it carries through the roster, production and battle UI.

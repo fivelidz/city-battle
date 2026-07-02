@@ -1,6 +1,6 @@
 # Research & Technology
 
-CITY BATTLE uses the **Rule the Waves research model** (see `ref/RTW2_MECHANICS.md` §5), re-themed
+CITY BATTLE uses a **stochastic, year-gated research model** (classic naval-wargame style), re-themed
 to walking artillery and stretched across an alt-modern **2025 → 2070** era curve. You **fund
 fields**, and techs **roll in stochastically** — you don't buy them outright. Each tech:
 
@@ -40,7 +40,7 @@ Because unlocks are stochastic, the **year a component actually arrives varies p
 | **Drone Dawn** | 2055–2063 | drones as the late asymmetric unlock | Recon/Loiter/Strike drones, Carrier-Crab frame, satellite & mesh control, fire-and-forget seekers |
 | **EW & Autonomy** | 2063–2070 | jamming, fibre-optic, spoofing, swarm AI, C-UAS | Jammers, Fibre-Optic Tether, Frequency Hopping, Swarm Autonomy, EMP payloads, CUAS hardkill, nano-lattice armour |
 
-**Design intent:** early game plays like a RtW dreadnought duel (slow, armoured, gun-vs-gun + terrain
+**Design intent:** early game plays like a dreadnought duel (slow, armoured, gun-vs-gun + terrain
 manoeuvre); **drones (the torpedo-equivalent) and EW (their hard counter) arrive late**, adding a
 rock-paper-scissors layer on top of the gun core rather than replacing it.
 

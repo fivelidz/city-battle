@@ -2,7 +2,7 @@
 
 > **Status:** source-research dossier on real (chiefly US Army) field-artillery & gunnery
 > doctrine, kept as the basis for CITY BATTLE's trajectory/terrain layer — the part that
-> **replaces RtW's flat sea** with real topography. Distilled into wiki pages 01 & 03–07.
+> **replaces flat open terrain** with real topography. Distilled into wiki pages 01 & 03–07.
 > Primary references reviewed: ATP 3-09.x fire-support series, ATP 3-21.90 (Fig 5-1, dead space),
 > FM 6-series gunnery. **→ City Battle** call-outs note in-game equivalents.
 
@@ -149,5 +149,5 @@ Even a perfectly laid gun scatters its rounds — manufacturing, propellant, win
 
 ---
 
-*End of dossier. See `RTW2_MECHANICS.md` for the strategic/design/research layer this trajectory
-model is bolted onto.*
+*End of dossier. This trajectory/terrain model underpins the fire, combat and map chapters
+(pages 01, 03–07).*

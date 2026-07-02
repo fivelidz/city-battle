@@ -1,7 +1,6 @@
 # Campaign & Management
 
-The strategic loop, ported from Rule the Waves (see `ref/RTW2_MECHANICS.md` §7) and trimmed of deep
-diplomacy. You are the **high command** of an alt-modern nation: **win wars on victory points**,
+A classic naval-wargame strategic loop, trimmed of deep diplomacy. You are the **high command** of an alt-modern nation: **win wars on victory points**,
 **stay popular to stay in power**, and **manage tension and budget** between rival nations.
 
 ## Victory Points — winning wars
@@ -11,8 +10,8 @@ through, supporting invasions); you **lose** VP for lost battles and lost crabs.
 VP when a war ends **wins it**. VP is the scoreboard of every campaign.
 
 ## Prestige / popularity — staying in power
-A running **prestige / popularity** measure decides whether you **keep your command**. (As in RtW3,
-losing popularity can remove you from power — a tenure game-over.)
+A running **prestige / popularity** measure decides whether you **keep your command**. Losing
+popularity can remove you from power — a tenure game-over.
 
 | Raises prestige | Lowers prestige |
 |---|---|
@@ -27,7 +26,7 @@ Prestige is the political layer over VP: you can win battles and still fall if t
 money turns the public against you.
 
 ## Tension — the road to war
-**Tension** is a per-rival scale **0 → 13** (RtW's model). It climbs from incidents, arms races,
+**Tension** is a per-rival scale **0 → 13**. It climbs from incidents, arms races,
 crises and provocative deployments.
 - **Tension gates your budget** — rising tension justifies larger (emergency) budgets.
 - **At 13, war triggers.** Deciding when to push a rival and when to back down is the core strategic
