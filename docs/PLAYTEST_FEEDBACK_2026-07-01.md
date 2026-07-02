@@ -454,3 +454,8 @@ B1 real suburb borders.
   under-unit status view TOGGLEABLE.
 - **[ ] AS3 — Fire-analysis panel should NAME the unit it is targeting** (which enemy the solution
   is for).
+
+## AT. Per-gun ammo (later)
+
+- **[ ] AT1 — Ammo should be tracked/shown PER GUN** (multi-gun units carry separate ammo pools per
+  mount; the panel + under-unit bars should reflect each gun's ammo, not one shared pool).
