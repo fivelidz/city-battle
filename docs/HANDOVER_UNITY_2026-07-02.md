@@ -163,3 +163,40 @@ demo live.
 Wrong-call scenario (for completeness): ONLY if the top priority were frictionless 2-second
 click-to-play reach over fidelity would staying web + slowly deepening the JS sim win. That's not the
 stated goal.
+
+---
+
+## 9. BUILD BLOCKER — investigation results (2026-07-02)
+
+**Status: reproduced, root-caused to the Editor install, needs a Hub repair/reinstall or a GUI build.**
+
+Reproduced the failure headless (minimal empty-scene build):
+```
+Serialized binary data for shader Hidden/Core/FallbackError
+Assertion failed on expression: 'm_LockCount == 0'
+Building - Failed to write file: Library/PlayerDataCache/Linux642/Data/Resources/unity_builtin_extra
+[BuildScript] MINIMAL build result=Failed
+```
+It fails at the **"Building Resources/unity_builtin_extra" step, during shader serialization** — NOT
+in game code (scripts compile, scenes build, 89 tests pass). It's the engine writing its own builtin
+shader resource that asserts.
+
+Tried and RULED OUT (all still fail identically):
+- `-job-worker-count 0` (single-threaded import — not a threading race).
+- `xvfb-run` (real GL context, not `-nographics` — not a headless-graphics issue).
+- Disk space fine (1.3 TB free); Linux Standalone build support IS installed.
+
+Signals: the editor's own `unity_builtin_extra` is 159 MB (Mar 31); the `m_LockCount==0` assertion in
+shader serialization is a known Unity-install corruption / version-bug symptom.
+
+**Recommended fixes (need interactive / your call — NOT done autonomously):**
+1. **Unity Hub → repair or reinstall 6000.4.2f1** (fixes a corrupted builtin resource), OR install a
+   newer 6000.4 patch (e.g. 6000.4.5f1+) and open the project in it. Most likely permanent fix.
+2. **Build from the Editor GUI** on the live desktop session (DISPLAY=:0): File ▸ Build Profiles ▸
+   Build. The prior audit noted the GUI path succeeds where batch mode fails.
+3. Only if 1–2 fail: try a fresh `Library/` (close editor, move Library aside, reopen — full reimport).
+
+**Also add a WebGL build target** to `Assets/Scripts/Editor/BuildScript.cs` (there's only Linux +
+Minimal now) so we can keep the shareable qalarc.com link once building works.
+
+Until the build is proven, treat Unity front-end work as reversible/local — don't ship-gate on it yet.
