@@ -35,3 +35,4 @@ citymap/data/*_terrain.stl
 terrain_pipeline/out/*.obj
 terrain_pipeline/out/*_osm_raw.json
 terrain_pipeline/cache/
+__pycache__/
